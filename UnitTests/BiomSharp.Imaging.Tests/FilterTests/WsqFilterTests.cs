@@ -1,7 +1,8 @@
+using BiomSharp.Imaging.Tests.TestCollections;
 using BiomSharp.Imaging.Wsq.Tree;
 namespace BiomSharp.Imaging.Tests.FilterTests;
 
-[Collection("WSQ shared filters")]
+[Collection(WsqSharedFiltersCollection.Name)]
 public class WsqFilterTests
 {
     [Fact]

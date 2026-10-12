@@ -1,6 +1,9 @@
-﻿namespace BiomSharp.Imaging.Tests.TestCollections;
+﻿using BiomSharp.Imaging.Tests.Fixtures;
 
-[CollectionDefinition("WSQ shared filters", DisableParallelization = true)]
-public class WsqSharedFiltersCollection
+namespace BiomSharp.Imaging.Tests.TestCollections;
+
+[CollectionDefinition(Name, DisableParallelization = true)]
+public class WsqSharedFiltersCollection : ICollectionFixture<FixtureEncodingFilter>
 {
+    public const string Name = "WSQ shared filters";
 }

@@ -32,7 +32,7 @@ public sealed class FixtureEncodingBenchmark : FixtureEncodingBase<FixtureEncodi
 #endif
         output.WriteLine($"Debugger attached: {Debugger.IsAttached}.");
         output.WriteLine($"{test.Parameters.Filter}, {test.ImageName}, " +
-            $"{test.Bitmap.Width}x{test.Bitmap.Height}, bitrate {test.Parameters.BitRate}: " +
+            $"{test.OriginalImageBitmap.Width}x{test.OriginalImageBitmap.Height}, bitrate {test.Parameters.BitRate}: " +
             $"{results.Length} sequential samples after one warm-up.");
         for (int i = 0; i < results.Length; i++)
         {
