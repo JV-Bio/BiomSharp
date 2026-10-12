@@ -14,6 +14,17 @@ internal sealed record WsqInspection(WsqFrame Header,
     int[] Coefficients, 
     int[] BlockCounts)
 {
+    public readonly static WsqInspection EmptyInspection = new WsqInspection(
+                Header: new WsqFrame(0, 0, 0, 0, 0, 0, 0, 0),
+                SizeWithoutComments: 0,
+                Center: 0,
+                BinWidths: Array.Empty<decimal>(),
+                ZeroWidths: Array.Empty<decimal>(),
+                Coefficients: Array.Empty<int>(),
+                BlockCounts: Array.Empty<int>()); 
+
+
+
     private static T Single<T>(IEnumerable<BaseSegment> segments) where T : BaseSegment
     {
         T[] matches = segments.OfType<T>().ToArray();
@@ -42,7 +53,14 @@ internal sealed record WsqInspection(WsqFrame Header,
     }
 
     public static WsqInspection Read(byte[] bytes)
-    {
+    {        
+        // Check the data length. 
+        // If the data is 0 long the inner WsqReader will keep looping.
+        if (bytes.Length == 0)
+        {
+            return EmptyInspection;
+        }
+
         using var stream = new MemoryStream(bytes, writable: false);
         using var reader = new EndianBinaryReader(stream);
         var segmenter = new Segmenter(reader);
@@ -77,6 +95,7 @@ internal sealed record WsqInspection(WsqFrame Header,
             }
             nextPosition = stream.Position;
         };
+
         segmenter.EnumerateSegments();
         BaseSegment[] segments = segmenter.AllSegments().ToArray();
         Require(segments[0].Marker == Marker.SOI && segments[^1].Marker == Marker.EOI,
@@ -103,7 +122,7 @@ internal sealed record WsqInspection(WsqFrame Header,
         }
         var tree = Quantizer.Create(sof).QTree ?? throw new InvalidDataException("Missing quantization tree.");
         var expectedBlocks = new int[3];
-        for (int i = 0; i < WsqEncodingRequirements.ComparedSubbandCount; i++)
+        for (int i = 0; i < WsqRequirementsEncoding.ComparedSubbandCount; i++)
         {
             if (widths[i] != 0)
             {
@@ -112,16 +131,16 @@ internal sealed record WsqInspection(WsqFrame Header,
         }
         Require(blockCounts.SequenceEqual(expectedBlocks),
             $"Coefficient block counts [{string.Join(", ", blockCounts)}] differ from expected [{string.Join(", ", expectedBlocks)}].");
-        Require(widths.Skip(WsqEncodingRequirements.ComparedSubbandCount).All(v => v == 0) &&
-            zeros.Skip(WsqEncodingRequirements.ComparedSubbandCount).All(v => v == 0),
-            $"Subbands {WsqEncodingRequirements.ComparedSubbandCount} through 63 must be discarded.");
+        Require(widths.Skip(WsqRequirementsEncoding.ComparedSubbandCount).All(v => v == 0) &&
+            zeros.Skip(WsqRequirementsEncoding.ComparedSubbandCount).All(v => v == 0),
+            $"Subbands {WsqRequirementsEncoding.ComparedSubbandCount} through 63 must be discarded.");
         int[] indices = (coefficients ?? throw new InvalidDataException("Missing coefficients."))
             .Pixels.Take(decodedCount).ToArray();
         Require(indices.Length > 0, "No quantized coefficients found.");
         long commentBytes = segments.OfType<Com>().Sum(c => (long)c.ContentSize + 4);
         return new WsqInspection(
             new WsqFrame(sof.X, sof.Y, sof.A, sof.B, sof.Ev, sof.Sf, dtt.L0, dtt.L1),
-            bytes.LongLength - commentBytes, center, widths.Take(WsqEncodingRequirements.ComparedSubbandCount).ToArray(),
-            zeros.Take(WsqEncodingRequirements.ComparedSubbandCount).ToArray(), indices, blockCounts.ToArray());
+            bytes.LongLength - commentBytes, center, widths.Take(WsqRequirementsEncoding.ComparedSubbandCount).ToArray(),
+            zeros.Take(WsqRequirementsEncoding.ComparedSubbandCount).ToArray(), indices, blockCounts.ToArray());
     }
 }

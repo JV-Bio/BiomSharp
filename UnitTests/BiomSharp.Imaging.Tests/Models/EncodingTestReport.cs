@@ -5,19 +5,13 @@ using BiomSharp.Imaging.Wsq;
 namespace BiomSharp.Imaging.Tests.Models;
 
 internal sealed record EncodingTestReport(
-    string Image,
-    float BitRate,
-    string Filter,
     string Runtime,
     string OS,
     string Architecture,
     string? BiomSharpVersion,
-    WsqFrame ActualHeader,
-    WsqFrame ReferenceHeader,
-    long ActualBytesExcludingComments,
-    long ReferenceBytesExcludingComments,
-    int[] ActualBlockCounts,
-    int[] ReferenceBlockCounts,
+    EncodingInputValues InputValues,
+    WsqMetadata EncodedMetadata,
+    WsqMetadata ReferenceMetadata,
     EncodingTestComparison Comparison,
     string CertificationLimitation)
 {
@@ -48,12 +42,34 @@ internal sealed record EncodingTestReport(
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public SequentialComparison? SequentialComparison { get; init; }
 
-    public static EncodingTestReport Create(string imageName, WsqParameters parameters,
-        WsqInspection actual, WsqInspection reference, int width, int height) =>
-        new(imageName, parameters.BitRate, parameters.Filter.ToString(),
-            RuntimeInformation.FrameworkDescription, RuntimeInformation.OSDescription,
-            RuntimeInformation.ProcessArchitecture.ToString(), typeof(WsqCodec).Assembly.GetName().Version?.ToString(),
-            actual.Header, reference.Header, actual.SizeWithoutComments, reference.SizeWithoutComments,
-            actual.BlockCounts, reference.BlockCounts, EncodingTestComparison.Compare(actual, reference, width, height),
+    public static EncodingTestReport Create(string imageName,
+        WsqParameters parameters,
+        WsqInspection encoded,
+        WsqInspection reference,
+        int width,
+        int height,
+        long imageSizeInBytes)
+    {
+        var comparison = EncodingTestComparison.Compare(reference, encoded);
+        if (encoded.Header.Width != width || encoded.Header.Height != height)
+        {
+            comparison.Failures.Add("Encoded dimensions differ from the input PGM.");
+        }
+        if (reference.Header.Width != width || reference.Header.Height != height)
+        {
+            comparison.Failures.Add("Reference dimensions differ from the input PGM.");
+        }
+
+        return new EncodingTestReport(
+            RuntimeInformation.FrameworkDescription, 
+            RuntimeInformation.OSDescription,
+            RuntimeInformation.ProcessArchitecture.ToString(), 
+            typeof(WsqCodec).Assembly.GetName().Version?.ToString(),
+            new EncodingInputValues(imageName, imageSizeInBytes, parameters.BitRate, parameters.Filter.ToString()),
+            WsqMetadata.Create(encoded, imageSizeInBytes),
+            WsqMetadata.Create(reference, imageSizeInBytes),
+            comparison,
             "Local encoder evaluation only; Sf=0 is not an assigned implementation number.");
+    }
+
 }

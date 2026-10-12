@@ -4,7 +4,7 @@ namespace BiomSharp.Imaging.Tests;
 /// Prescribed WSQ encoder acceptance values used by the local reference comparisons.
 /// Test configuration, such as the selected bitrate, and image-specific reference data are separate.
 /// </summary>
-internal static class WsqEncodingRequirements
+internal static class WsqRequirementsEncoding
 {
     /// <summary>
     /// Maximum absolute compressed-size difference, in percent of the reference size.

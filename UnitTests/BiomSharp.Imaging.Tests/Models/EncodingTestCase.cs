@@ -3,7 +3,7 @@
 namespace BiomSharp.Imaging.Tests.Models;
 
 public sealed record EncodingTestCase(string ImageName, 
-    byte[] InputBytes, 
-   SimpleBitmap Bitmap, 
+    byte[] OrignalImageData, 
+   SimpleBitmap OriginalImageBitmap, 
    WsqParameters Parameters, 
    WsqCodec Codec);
