@@ -22,6 +22,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Source\BiomSharp\BiomSharp\BiomSharp.csproj" />
+    <None Update="NativeTools\NBIS\5.0.0\*.exe" CopyToOutputDirectory="PreserveNewest" /> 
   </ItemGroup>
 
+  <Import Project="..\..\Source\BiomSharp\Unmanaged\Unmanaged.projitems" Label="Shared" />
+	<ItemGroup>
+		<None Update="..\..\Source\BiomSharp\Unmanaged\bin\x64\nfiq2\Nfiq2Api.dll" Link="Nfiq2Api.dll" CopyToOutputDirectory="PreserveNewest" />
+		<None Update="..\..\Source\BiomSharp\Unmanaged\bin\x64\nfiq2\getopt.dll" Link="getopt.dll" CopyToOutputDirectory="PreserveNewest" />
+	</ItemGroup>
 </Project>
