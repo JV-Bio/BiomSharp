@@ -1,5 +1,6 @@
 using BiomSharp.Imaging.Tests.Fixtures;
 using BiomSharp.Imaging.Tests.Models;
+using BiomSharp.Imaging.Tests.TestCollections;
 using BiomSharp.Imaging.Wsq;
 using Xunit.Abstractions;
 
@@ -7,7 +8,7 @@ namespace BiomSharp.Imaging.Tests.FilterTests;
 
 [Trait("Category", "Encoding")]
 [Trait("Category", "Concurrency")]
-[Collection("WSQ shared filters")]
+[Collection(WsqSharedFiltersCollection.Name)]
 public partial class WsqEncoding2_25_Filter_AsyncTests : IClassFixture<FixtureEncodingFilter>
 {
     public WsqEncoding2_25_Filter_AsyncTests(FixtureEncodingFilter fixture, ITestOutputHelper output)

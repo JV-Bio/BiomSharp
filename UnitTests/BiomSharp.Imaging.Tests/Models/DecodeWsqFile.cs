@@ -1,25 +1,34 @@
 ﻿using BiomSharp.Nist;
 using System.Diagnostics;
 using System.Globalization;
-using System.Runtime.Intrinsics.Arm;
 using System.Security.Cryptography;
 
 namespace BiomSharp.Imaging.Tests.Models;
 
 internal class DecodeWsqFile
 {
-    public DecodeWsqFile() : this (Environment.Is64BitProcess)
+    public DecodeWsqFile() : this(DirectoryPath)
     {
         
     }
 
-    private DecodeWsqFile(bool isX64Process)
+    /// <summary>
+    /// Selects the executable for this process from the supplied directory.
+    /// Allows validation against isolated executable copies without changing the bundled tools.
+    /// </summary>
+    internal DecodeWsqFile(string executableDirectory) : this(Environment.Is64BitProcess, executableDirectory)
+    {
+    }
+
+    private DecodeWsqFile(bool isX64Process, string executableDirectory)
     {
         if (!OperatingSystem.IsWindows())
         {
             throw new PlatformNotSupportedException("The bundled NBIS executables require Windows.");
         }
-        
+        ArgumentNullException.ThrowIfNull(executableDirectory);
+        _executableDirectory = Path.GetFullPath(executableDirectory);
+
         if (isX64Process)
         {
             Sha256Value = "E268EB972228F9E8386FBEDC684220DE9F34E312E1652D7C07D4B1B8F2990500";
@@ -35,6 +44,7 @@ internal class DecodeWsqFile
     public readonly string Sha256Value;
     public readonly string FileName;
     public bool IsValid => IsFileValid();
+    private readonly string _executableDirectory;
 
     /// <summary>
     /// Directory path to native tools
@@ -44,10 +54,10 @@ internal class DecodeWsqFile
 
     private bool IsFileValid()
     {
-        var fullpath = Path.Combine(DirectoryPath, FileName);
-        if (!Directory.Exists(DirectoryPath))
+        var fullpath = Path.Combine(_executableDirectory, FileName);
+        if (!Directory.Exists(_executableDirectory))
         {            
-            throw new DirectoryNotFoundException($"Directory: '{DirectoryPath}' does not exist.");
+            throw new DirectoryNotFoundException($"Directory: '{_executableDirectory}' does not exist.");
         }
 
         if(!File.Exists(fullpath))
@@ -82,7 +92,7 @@ internal class DecodeWsqFile
     {
         // dwsq writes both raw pixels and NISTCOM next to its input.
         File.Copy(inputPath, Path.Combine(workDirectory, wsqFileName));
-        var startInfo = new ProcessStartInfo(Path.Combine(DirectoryPath, FileName))
+        var startInfo = new ProcessStartInfo(Path.Combine(_executableDirectory, FileName))
         {
             WorkingDirectory = workDirectory,
             UseShellExecute = false,

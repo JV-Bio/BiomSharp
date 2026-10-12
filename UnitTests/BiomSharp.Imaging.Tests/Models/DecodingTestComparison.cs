@@ -100,8 +100,8 @@ internal sealed record DecodingTestComparison(decimal IdenticalPixelPercent, int
     private static void CheckDecoderAcceptance(List<string> failures, long pixelCount, long identicalPixels,
         int highestDifference)
     {
-        var identicalPixelsPercent = Math.Round(100m * identicalPixels / pixelCount, 1,MidpointRounding.AwayFromZero);
-        Check(failures, identicalPixelsPercent >= WsqRequirementsDecoding.MinimumIdenticalPixelPercent,
+        decimal identicalPixelsPercent = 100m * identicalPixels / pixelCount;
+        Check(failures, 100m * identicalPixels >= WsqRequirementsDecoding.MinimumIdenticalPixelPercent * pixelCount,
             $"{identicalPixelsPercent}% of pixels are identical; " +
             $"at least {WsqRequirementsDecoding.MinimumIdenticalPixelPercent}% must be identical.");
         Check(failures, highestDifference <= WsqRequirementsDecoding.MaximumPixelDifference,

@@ -11,7 +11,7 @@ namespace BiomSharp.Imaging.Tests.EncodingTests
     {
         public BenchmarkEncoding(FixtureEncodingBenchmark fixture, ITestOutputHelper output)
         {
-            _fixture = fixture;            
+            _fixture = fixture;
             _output = output;
         }
 
