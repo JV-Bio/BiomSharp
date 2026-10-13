@@ -11,10 +11,14 @@ public class DecodingComparisonTests
     public void Missing_images_report_failures_without_calculating_measurements(
         bool missingBaseline, bool missingDecoded, int failureCount)
     {
-        var result = DecodingTestComparison.Compare(
-            missingBaseline ? null : CreatePgm(3, 2),
-            missingDecoded ? null : CreatePgm(3, 2), DecodingComparisonMode.MeasurementsOnly);
+        // Arrange
+        var baseline = missingBaseline ? null : CreatePgm(3, 2);
+        var decoded = missingDecoded ? null : CreatePgm(3, 2);
 
+        // Act
+        var result = DecodingTestComparison.Compare(baseline, decoded, DecodingComparisonMode.MeasurementsOnly);
+
+        // Assert
         Assert.Equal(failureCount, result.Failures.Count);
         Assert.All(result.Failures, failure => Assert.Contains("must contain an image", failure));
         AssertMeasurementsUnavailable(result);
@@ -23,10 +27,13 @@ public class DecodingComparisonTests
     [Fact]
     public void Same_valid_container_has_identical_pixels()
     {
+        // Arrange
         var pgm = CreatePgm(3, 2);
 
+        // Act
         var result = DecodingTestComparison.Compare(pgm, pgm, DecodingComparisonMode.DecoderAcceptance);
 
+        // Assert
         Assert.Empty(result.Failures);
         Assert.Equal(100m, result.IdenticalPixelPercent);
         Assert.Equal(0, result.HighestPixelDifference);
@@ -38,9 +45,15 @@ public class DecodingComparisonTests
     [InlineData(2, 3)]
     public void Different_dimensions_report_failure_even_when_pixel_counts_match(int width, int height)
     {
-        var result = DecodingTestComparison.Compare(CreatePgm(3, 2), CreatePgm(width, height),
+        // Arrange
+        var baseline = CreatePgm(3, 2);
+        var decoded = CreatePgm(width, height);
+
+        // Act
+        var result = DecodingTestComparison.Compare(baseline, decoded,
             DecodingComparisonMode.DecoderAcceptance);
 
+        // Assert
         Assert.Contains("Decoded dimensions", Assert.Single(result.Failures));
         AssertMeasurementsUnavailable(result);
     }
@@ -48,10 +61,13 @@ public class DecodingComparisonTests
     [Fact]
     public void Same_container_is_validated_before_reporting_identical_pixels()
     {
+        // Arrange
         var pgm = new DataContainerPgm("incomplete.pgm", System.Text.Encoding.ASCII.GetBytes("P5\n"));
 
+        // Act
         var result = DecodingTestComparison.Compare(pgm, pgm, DecodingComparisonMode.DecoderAcceptance);
 
+        // Assert
         Assert.Equal(2, result.Failures.Count);
         Assert.All(result.Failures, failure => Assert.Contains("dimensions must be positive", failure));
         AssertMeasurementsUnavailable(result);
@@ -60,9 +76,15 @@ public class DecodingComparisonTests
     [Fact]
     public void Measurements_only_does_not_apply_decoder_acceptance_limits()
     {
-        var result = DecodingTestComparison.Compare(CreatePgm(3, 2), CreatePgm(3, 2, 255),
+        // Arrange
+        var baseline = CreatePgm(3, 2);
+        var decoded = CreatePgm(3, 2, 255);
+
+        // Act
+        var result = DecodingTestComparison.Compare(baseline, decoded,
             DecodingComparisonMode.MeasurementsOnly);
 
+        // Assert
         Assert.Empty(result.Failures);
         Assert.Equal(0m, result.IdenticalPixelPercent);
         Assert.Equal(255, result.HighestPixelDifference);
@@ -71,14 +93,17 @@ public class DecodingComparisonTests
     [Fact]
     public void Measurements_count_exact_matches_and_use_absolute_pixel_differences()
     {
+        // Arrange
         var baseline = new DataContainerPgm("Test", "baseline.pgm",
             SimpleBitmap.Gray8(new byte[] { 0, 32, 128, 255 }, 2, 2));
         var decoded = new DataContainerPgm("Test", "decoded.pgm",
             SimpleBitmap.Gray8(new byte[] { 1, 32, 126, 255 }, 2, 2));
 
+        // Act
         var result = DecodingTestComparison.Compare(baseline, decoded, DecodingComparisonMode.MeasurementsOnly);
         var reversed = DecodingTestComparison.Compare(decoded, baseline, DecodingComparisonMode.MeasurementsOnly);
 
+        // Assert
         Assert.Empty(result.Failures);
         Assert.Equal(50m, result.IdenticalPixelPercent);
         Assert.Equal(2, result.HighestPixelDifference);
@@ -92,8 +117,14 @@ public class DecodingComparisonTests
     [InlineData((int)DecodingComparisonMode.DecoderAcceptance)]
     public void Distinct_containers_with_identical_pixels_compare_equal(int mode)
     {
-        var result = DecodingTestComparison.Compare(CreatePgm(3, 2), CreatePgm(3, 2), (DecodingComparisonMode)mode);
+        // Arrange
+        var baseline = CreatePgm(3, 2);
+        var decoded = CreatePgm(3, 2);
 
+        // Act
+        var result = DecodingTestComparison.Compare(baseline, decoded, (DecodingComparisonMode)mode);
+
+        // Assert
         Assert.Empty(result.Failures);
         Assert.Equal(100m, result.IdenticalPixelPercent);
         Assert.Equal(0, result.HighestPixelDifference);
@@ -111,9 +142,13 @@ public class DecodingComparisonTests
     public void Identical_pixel_limit_is_inclusive_and_not_rounded(
         int pixelCount, int mismatches, bool passes)
     {
+        // Arrange
         var (baseline, decoded) = CreateChangedPixels(pixelCount, mismatches, 1);
+
+        // Act
         var result = DecodingTestComparison.Compare(baseline, decoded, DecodingComparisonMode.DecoderAcceptance);
 
+        // Assert
         Assert.Equal(100m * (pixelCount - mismatches) / pixelCount, result.IdenticalPixelPercent);
         Assert.Equal(1, result.HighestPixelDifference);
         if (passes)
@@ -129,10 +164,13 @@ public class DecodingComparisonTests
     [InlineData(-2, false)]
     public void Absolute_pixel_difference_limit_is_inclusive(int difference, bool passes)
     {
+        // Arrange
         var (baseline, decoded) = CreateChangedPixels(1000, 1, difference);
 
+        // Act
         var result = DecodingTestComparison.Compare(baseline, decoded, DecodingComparisonMode.DecoderAcceptance);
 
+        // Assert
         Assert.Equal(99.9m, result.IdenticalPixelPercent);
         Assert.Equal(Math.Abs(difference), result.HighestPixelDifference);
         if (passes)
@@ -144,10 +182,13 @@ public class DecodingComparisonTests
     [Fact]
     public void Both_acceptance_failures_are_reported_when_both_limits_are_exceeded()
     {
+        // Arrange
         var (baseline, decoded) = CreateChangedPixels(1000, 2, 2);
 
+        // Act
         var result = DecodingTestComparison.Compare(baseline, decoded, DecodingComparisonMode.DecoderAcceptance);
 
+        // Assert
         Assert.Equal(99.8m, result.IdenticalPixelPercent);
         Assert.Equal(2, result.HighestPixelDifference);
         Assert.Equal(2, result.Failures.Count);
@@ -158,12 +199,15 @@ public class DecodingComparisonTests
     [Fact]
     public void Default_mode_applies_decoder_acceptance_limits()
     {
+        // Arrange
         var (baseline, decoded) = CreateChangedPixels(1000, 2, 2);
 
+        // Act
         var result = DecodingTestComparison.Compare(baseline, decoded);
         var explicitResult = DecodingTestComparison.Compare(
             baseline, decoded, DecodingComparisonMode.DecoderAcceptance);
 
+        // Assert
         Assert.Equal(2, result.Failures.Count);
         Assert.Equal(explicitResult.Failures, result.Failures);
         Assert.Equal(explicitResult.IdenticalPixelPercent, result.IdenticalPixelPercent);
@@ -173,10 +217,15 @@ public class DecodingComparisonTests
     [Fact]
     public void Invalid_comparison_mode_is_rejected()
     {
+        // Arrange
         var pgm = CreatePgm(3, 2);
 
-        Assert.Throws<ArgumentOutOfRangeException>(() =>
+        // Act
+        var exception = Record.Exception(() =>
             DecodingTestComparison.Compare(pgm, pgm, (DecodingComparisonMode)(-1)));
+
+        // Assert
+        Assert.IsType<ArgumentOutOfRangeException>(exception);
     }
 
     private static void AssertMeasurementsUnavailable(DecodingTestComparison result)

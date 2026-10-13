@@ -15,10 +15,14 @@ public class DecodingTestReportTests
     public void Report_compares_pixels_without_claiming_certification(
         byte changedPixel, int mismatches, decimal identicalPercent, decimal meanDifference, decimal meanSquaredError)
     {
+        // Arrange
         var test = CreateTest(SimpleBitmap.Gray8(new byte[] { changedPixel, 10, 20, 30 }, 2, 2));
         try
         {
+            // Act
             new FixtureFullProcess().WriteComparisonReport(test);
+
+            // Assert
             using var json = ReadReport(test);
             var root = json.RootElement;
             Assert.False(root.GetProperty("CertificationEvaluated").GetBoolean());
@@ -41,6 +45,7 @@ public class DecodingTestReportTests
     [Fact]
     public void Report_compares_native_pixels_and_artifact_writer_saves_native_binary_Pgm()
     {
+        // Arrange
         var test = CreateTest(SimpleBitmap.Gray8(new byte[] { 1, 10, 20, 30 }, 2, 2));
         byte[] nativePixels = { 255, 9, 20, 30 };
         test.AddPgmContainer(ExecutableType.NativDswq, new DataContainerPgm("dwsq", "example.pgm",
@@ -48,7 +53,12 @@ public class DecodingTestReportTests
         var fixture = new FixtureFullProcess();
         try
         {
+            // Act
             fixture.WriteComparisonReport(test);
+            string[] reportFiles = Directory.GetFiles(test.CaseId.CaseDirectory);
+            fixture.WriteFilesToCaseDirectory(test);
+
+            // Assert
             using var json = ReadReport(test);
             var root = json.RootElement;
             var native = root.GetProperty("DecodedComparisons").GetProperty("NativDswq").GetProperty("Pixels");
@@ -67,8 +77,7 @@ public class DecodingTestReportTests
             Assert.Equal(16129.25m, decoder.GetProperty("MeanSquaredError").GetDecimal());
             Assert.False(decoder.GetProperty("IsWsqRequirementsDecodingPassed").GetBoolean());
 
-            Assert.Single(Directory.GetFiles(test.CaseId.CaseDirectory));
-            fixture.WriteFilesToCaseDirectory(test);
+            Assert.Single(reportFiles);
             var pgm = new PgmCodec();
             using var stream = File.OpenRead(Path.Combine(test.CaseId.CaseDirectory, "example.NativDswq.decoded-15.pgm"));
             pgm.Read(stream, out PgmParameters? parameters);
@@ -84,11 +93,15 @@ public class DecodingTestReportTests
     [Fact]
     public void Report_records_missing_native_reconstruction()
     {
+        // Arrange
         var test = CreateTest(SimpleBitmap.Gray8(new byte[4], 2, 2));
         test.RemovePgmContainer(ExecutableType.NativDswq);
         try
         {
+            // Act
             new FixtureFullProcess().WriteComparisonReport(test);
+
+            // Assert
             using var json = ReadReport(test);
             Assert.Equal("BaselineUnavailable",
                 json.RootElement.GetProperty("DecoderComparisons").GetProperty("Status").GetString());
@@ -105,12 +118,16 @@ public class DecodingTestReportTests
     public void Decoder_agreement_uses_inclusive_unrounded_AA3_limits(
         int count, int mismatches, byte difference, bool passes)
     {
+        // Arrange
         byte[] pixels = new byte[count];
         Array.Fill(pixels, difference, 0, mismatches);
         var test = CreateTest(SimpleBitmap.Gray8(pixels, count, 1), SimpleBitmap.Gray8(new byte[count], count, 1));
         try
         {
+            // Act
             new FixtureFullProcess().WriteComparisonReport(test);
+
+            // Assert
             using var json = ReadReport(test);
             var comparison = json.RootElement.GetProperty("DecoderComparisons");
             var requirements = comparison.GetProperty("WsqRequirementsDecoding");
@@ -127,12 +144,16 @@ public class DecodingTestReportTests
     [InlineData(false)]
     public void Report_records_incompatible_dimensions_even_with_equal_pixel_counts(bool invalidNative)
     {
+        // Arrange
         var test = CreateTest(SimpleBitmap.Gray8(new byte[4], 2, 2));
         test.AddPgmContainer(invalidNative ? ExecutableType.NativDswq : ExecutableType.BiomSharp,
             new DataContainerPgm("Test", "different.pgm", SimpleBitmap.Gray8(new byte[4], 4, 1)));
         try
         {
+            // Act
             new FixtureFullProcess().WriteComparisonReport(test);
+
+            // Assert
             using var json = ReadReport(test);
             var comparison = json.RootElement.GetProperty("DecoderComparisons").GetProperty("Results").GetProperty("BiomSharp");
             Assert.Equal("Unavailable", comparison.GetProperty("Status").GetString());
@@ -145,8 +166,15 @@ public class DecodingTestReportTests
     [Fact]
     public void Invalid_pixel_buffer_is_rejected_when_creating_pgm_input()
     {
-        Assert.Throws<InvalidOperationException>(() =>
-            new DataContainerPgm("Test", "invalid.pgm", SimpleBitmap.Gray8(new byte[3], 2, 2)));
+        // Arrange
+        byte[] pixels = new byte[3];
+
+        // Act
+        var exception = Record.Exception(() =>
+            new DataContainerPgm("Test", "invalid.pgm", SimpleBitmap.Gray8(pixels, 2, 2)));
+
+        // Assert
+        Assert.IsType<InvalidOperationException>(exception);
     }
 
     private static TestCaseData CreateTest(SimpleBitmap decoded, SimpleBitmap? original = null)

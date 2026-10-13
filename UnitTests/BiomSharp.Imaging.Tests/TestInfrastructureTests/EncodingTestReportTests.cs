@@ -13,6 +13,7 @@ public class EncodingTestReportTests
     public void Report_groups_metadata_by_file(
         long actualSize, long referenceSize, long imageSize, string encodedRatio, string referenceRatio)
     {
+        // Arrange
         var actual = new WsqInspection(new WsqFrame(1508, 1008, 0, 255, 2, 0, 7, 9),
             actualSize, 0.44m, new decimal[WsqRequirementsEncoding.ComparedSubbandCount],
             new decimal[WsqRequirementsEncoding.ComparedSubbandCount],
@@ -25,8 +26,12 @@ public class EncodingTestReportTests
         };
 
         var parameters = new WsqParameters();
+
+        // Act
         EncodingTestReport report = EncodingTestReport.Create(
             "a001.pgm", parameters, actual, reference, 1508, 1008, imageSize);
+
+        // Assert
         using JsonDocument json = JsonDocument.Parse(JsonSerializer.Serialize(report));
         JsonElement root = json.RootElement;
 
@@ -59,13 +64,16 @@ public class EncodingTestReportTests
     [Fact]
     public void Report_preserves_input_dimension_checks_when_both_wsq_frames_agree()
     {
+        // Arrange
         var inspection = new WsqInspection(new WsqFrame(100, 100, 0, 255, 2, 0, 7, 9),
             1000, 0.44m, new decimal[WsqRequirementsEncoding.ComparedSubbandCount],
             new decimal[WsqRequirementsEncoding.ComparedSubbandCount], new[] { 0 }, new[] { 1, 0, 0 });
 
+        // Act
         var report = EncodingTestReport.Create("example.pgm", new WsqParameters(),
             inspection, inspection, 200, 100, 20000);
 
+        // Assert
         Assert.Contains("Encoded dimensions differ from the input PGM.", report.Comparison.Failures);
         Assert.Contains("Reference dimensions differ from the input PGM.", report.Comparison.Failures);
     }

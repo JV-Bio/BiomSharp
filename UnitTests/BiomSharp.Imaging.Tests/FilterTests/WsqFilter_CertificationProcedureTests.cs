@@ -34,14 +34,17 @@ public class WsqFilter_CertificationProcedureTests
     [Fact]
     public void Decode_cmp00009_with_nonstandard_filter_produces_binary_Pgm()
     {
+        // Arrange
         var parameters = _fixture.GetEncoding0_75Parameters(WsqFilterType.Odd7x9);        
         var test = _fixture.ArrangeTestCase("cmp00009.pgm", 
             parameters,
             referenceWsqRelativePath: Path.Combine("decode", "not_7_9", "cmp00009.wsq"));
         _fixture.DecodeWsqDataUsingNistDwsq(test, test.OriginalWsqData);
 
+        // Act
         _fixture.DecodeWsqData(test, test.OriginalWsqData);
 
+        // Assert
         _fixture.WriteComparisonReport(test);
         _fixture.WriteFilesToCaseDirectory(test);
         _fixture.AssertTestCaseDecoding(test);
@@ -50,13 +53,16 @@ public class WsqFilter_CertificationProcedureTests
     [Fact]
     public void Decode_cmp00010_with_nonstandard_filter_produces_binary_Pgm()
     {
+        // Arrange
         var parameters = _fixture.GetEncoding0_75Parameters(WsqFilterType.Odd7x9);
         var test = _fixture.ArrangeTestCase("cmp00010.pgm", parameters,
             referenceWsqRelativePath: Path.Combine("decode", "not_7_9", "cmp00010.wsq"));
         _fixture.DecodeWsqDataUsingNistDwsq(test, test.OriginalWsqData);
 
+        // Act
         _fixture.DecodeWsqData(test, test.OriginalWsqData);
 
+        // Assert
         _fixture.WriteComparisonReport(test);
         _fixture.WriteFilesToCaseDirectory(test);
         _fixture.AssertTestCaseDecoding(test);
@@ -65,13 +71,16 @@ public class WsqFilter_CertificationProcedureTests
     [Fact]
     public void Decode_cmp00013_with_nonstandard_filter_produces_binary_Pgm()
     {
+        // Arrange
         var parameters = _fixture.GetEncoding0_75Parameters(WsqFilterType.Odd7x9);
         var test = _fixture.ArrangeTestCase("cmp00013.pgm", parameters,
             referenceWsqRelativePath: Path.Combine("decode", "not_7_9", "cmp00013.wsq"));
         _fixture.DecodeWsqDataUsingNistDwsq(test, test.OriginalWsqData);
 
+        // Act
         _fixture.DecodeWsqData(test, test.OriginalWsqData);
 
+        // Assert
         _fixture.WriteComparisonReport(test);
         _fixture.WriteFilesToCaseDirectory(test);
         _fixture.AssertTestCaseDecoding(test);
@@ -80,13 +89,16 @@ public class WsqFilter_CertificationProcedureTests
     [Fact]
     public void Decode_cmp00014_with_nonstandard_filter_produces_binary_Pgm()
     {
+        // Arrange
         var parameters = _fixture.GetEncoding0_75Parameters(WsqFilterType.Odd7x9);
         var test = _fixture.ArrangeTestCase("cmp00014.pgm", parameters,
             referenceWsqRelativePath: Path.Combine("decode", "not_7_9", "cmp00014.wsq"));
         _fixture.DecodeWsqDataUsingNistDwsq(test, test.OriginalWsqData);
 
+        // Act
         _fixture.DecodeWsqData(test, test.OriginalWsqData);
 
+        // Assert
         _fixture.WriteComparisonReport(test);
         _fixture.WriteFilesToCaseDirectory(test);
         _fixture.AssertTestCaseDecoding(test);
@@ -95,13 +107,16 @@ public class WsqFilter_CertificationProcedureTests
     [Fact]
     public void Decode_cmp00015_with_nonstandard_filter_produces_binary_Pgm()
     {
+        // Arrange
         var parameters = _fixture.GetEncoding0_75Parameters(WsqFilterType.Odd7x9);
         var test = _fixture.ArrangeTestCase("cmp00015.pgm", parameters,
             referenceWsqRelativePath: Path.Combine("decode", "not_7_9", "cmp00015.wsq"));
         _fixture.DecodeWsqDataUsingNistDwsq(test, test.OriginalWsqData);
 
+        // Act
         _fixture.DecodeWsqData(test, test.OriginalWsqData);
 
+        // Assert
         _fixture.WriteComparisonReport(test);
         _fixture.WriteFilesToCaseDirectory(test);
         _fixture.AssertTestCaseDecoding(test);
@@ -110,13 +125,16 @@ public class WsqFilter_CertificationProcedureTests
     [Fact]
     public void Decode_cmp00016_with_nonstandard_filter_produces_binary_Pgm()
     {
+        // Arrange
         var parameters = _fixture.GetEncoding0_75Parameters(WsqFilterType.Odd7x9);
         var test = _fixture.ArrangeTestCase("cmp00016.pgm", parameters,
             referenceWsqRelativePath: Path.Combine("decode", "not_7_9", "cmp00016.wsq"));
         _fixture.DecodeWsqDataUsingNistDwsq(test, test.OriginalWsqData);
 
+        // Act
         _fixture.DecodeWsqData(test, test.OriginalWsqData);
 
+        // Assert
         _fixture.WriteComparisonReport(test);
         _fixture.WriteFilesToCaseDirectory(test);
         _fixture.AssertTestCaseDecoding(test);

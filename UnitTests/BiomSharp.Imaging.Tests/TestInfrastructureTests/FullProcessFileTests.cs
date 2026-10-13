@@ -25,6 +25,7 @@ public class FullProcessFileTests : IDisposable
     [InlineData(32, 4)]
     public void Write_bmp_preserves_simple_bitmap_bit_depth_and_pixels(int bitDepth, int width)
     {
+        // Arrange
         int bytesPerPixel = bitDepth / 8;
         byte[] pixels = Enumerable.Range(0, width * 2 * bytesPerPixel)
             .Select(i => (byte)(i * 17 % 256)).ToArray();
@@ -38,7 +39,10 @@ public class FullProcessFileTests : IDisposable
         string path = Path.GetTempFileName();
         try
         {
+            // Act
             ImageConverter.WriteBmp(bitmap, path);
+
+            // Assert
             using var reader = new BinaryReader(File.OpenRead(path));
             reader.BaseStream.Position = 10;
             int pixelOffset = reader.ReadInt32();
@@ -99,15 +103,23 @@ public class FullProcessFileTests : IDisposable
     [Fact]
     public void Write_bmp_rejects_unsupported_depth_and_incomplete_pixels_before_writing()
     {
+        // Arrange
         string path = Path.GetTempFileName();
         byte[] existing = { 1, 2, 3, 4 };
         try
         {
             File.WriteAllBytes(path, existing);
-            Assert.Throws<NotSupportedException>(() => ImageConverter.WriteBmp(new SimpleBitmap(), path));
-            Assert.Equal(existing, File.ReadAllBytes(path));
-            Assert.Throws<InvalidDataException>(() =>
+
+            // Act
+            var unsupportedDepthError = Record.Exception(() => ImageConverter.WriteBmp(new SimpleBitmap(), path));
+            byte[] afterUnsupportedDepth = File.ReadAllBytes(path);
+            var incompletePixelsError = Record.Exception(() =>
                 ImageConverter.WriteBmp(SimpleBitmap.Rgb24(new byte[2], 1, 1), path));
+
+            // Assert
+            Assert.IsType<NotSupportedException>(unsupportedDepthError);
+            Assert.Equal(existing, afterUnsupportedDepth);
+            Assert.IsType<InvalidDataException>(incompletePixelsError);
             Assert.Equal(existing, File.ReadAllBytes(path));
         }
         finally
@@ -121,11 +133,14 @@ public class FullProcessFileTests : IDisposable
     [InlineData(true)]
     public void Write_files_writes_pgm_artifacts_without_bmps_or_reports(bool includeDecoded)
     {
+        // Arrange
         var test = CreateTestCase(includeDecoded, 3);
         Directory.CreateDirectory(_directory);
 
+        // Act
         new FixtureFullProcess().WriteFilesToCaseDirectory(test);
 
+        // Assert
         var expectedFiles = new List<string> { "example.original.pgm" };
         Assert.Equal(test.OriginalPgm.Data, File.ReadAllBytes(Path.Combine(_directory, "example.original.pgm")));
         foreach (var item in test.DecodedResults)
@@ -146,11 +161,14 @@ public class FullProcessFileTests : IDisposable
     [InlineData(true, 128)]
     public void Write_bmp_files_creates_directory_and_preserves_all_pgm_pixels(bool includeDecoded, int width)
     {
+        // Arrange
         var test = CreateTestCase(includeDecoded, width);
         Assert.False(Directory.Exists(_directory));
 
+        // Act
         new FixtureFullProcess().WriteBmpFilesToCaseDirectory(test);
 
+        // Assert
         AssertBmp(Path.Combine(_directory, "example.original.bmp"), test.OriginalPgm);
         var expectedFiles = new List<string> { "example.original.bmp" };
         foreach (var item in test.DecodedResults)
@@ -165,12 +183,15 @@ public class FullProcessFileTests : IDisposable
     [Fact]
     public void Write_bmp_files_keeps_outputs_for_other_ratios()
     {
+        // Arrange
         var test = CreateTestCase(true, 3);
         var fixture = new FixtureFullProcess();
         fixture.WriteBmpFilesToCaseDirectory(test);
 
+        // Act
         fixture.WriteBmpFilesToCaseDirectory(test with { Parameters = new WsqParameters { BitRate = 2.25f } });
 
+        // Assert
         AssertBmp(Path.Combine(_directory, "example.original.bmp"), test.OriginalPgm);
         var expectedFiles = new List<string> { "example.original.bmp" };
         foreach (var item in test.DecodedResults)
@@ -188,12 +209,15 @@ public class FullProcessFileTests : IDisposable
     [Fact]
     public void Write_bmp_files_replaces_existing_images_without_leaving_trailing_bytes()
     {
+        // Arrange
         var fixture = new FixtureFullProcess();
         fixture.WriteBmpFilesToCaseDirectory(CreateTestCase(true, 128));
         var replacement = CreateTestCase(true, 1);
 
+        // Act
         fixture.WriteBmpFilesToCaseDirectory(replacement);
 
+        // Assert
         AssertBmp(Path.Combine(_directory, "example.original.bmp"), replacement.OriginalPgm);
         foreach (var item in replacement.DecodedResults)
             AssertBmp(Path.Combine(_directory, $"example.{item.Key}.decoded-15.bmp"), item.Value);

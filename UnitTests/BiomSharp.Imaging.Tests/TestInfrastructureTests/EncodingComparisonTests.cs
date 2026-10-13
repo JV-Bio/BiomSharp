@@ -16,6 +16,7 @@ public class EncodingComparisonTests
     public void Report_writer_records_comparison_without_asserting_or_writing_wsq(
         int symbol, int mismatches)
     {
+        // Arrange
         string directory = Path.Combine(TestResources.UnitTestsDirectory, "TestResults", $"report_{Guid.NewGuid():N}");
         byte[] plain = CreateFixture((byte)symbol);
         byte[] comment = { 0xff, 0xa8, 0, 5, 65, 66, 67 };
@@ -28,8 +29,10 @@ public class EncodingComparisonTests
         test.AddWsqContainer(ExecutableType.BiomSharp, encoded);
         try
         {
+            // Act
             new FixtureFullProcess().WriteComparisonReport(test);
 
+            // Assert
             using JsonDocument json = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, "example.comparison-15.json")));
             JsonElement input = json.RootElement.GetProperty("OriginalImage");
             Assert.Equal("example.pgm", input.GetProperty("FileName").GetString());
@@ -64,14 +67,20 @@ public class EncodingComparisonTests
     [InlineData(1.333, "1.33:1")]
     public void Metadata_formats_file_compression_ratio(double ratio, string expected)
     {
+        // Arrange
         var inspection = WsqInspection.Read(CreateFixture());
+
+        // Act
         var metadata = WsqMetadata.Create(inspection, (long)(inspection.SizeWithoutComments * ratio));
+
+        // Assert
         Assert.Equal(expected, metadata.CompressionRatio);
     }
 
     [Fact]
     public void Wsq_writer_preserves_supplied_bytes_without_writing_a_report()
     {
+        // Arrange
         string directory = Path.Combine(TestResources.UnitTestsDirectory, "TestResults", $"wsq_{Guid.NewGuid():N}");
         byte[] bytes = CreateFixture();
         byte[] referenceBytes = CreateFixture(181);
@@ -84,8 +93,11 @@ public class EncodingComparisonTests
         try
         {
             Directory.CreateDirectory(directory);
+
+            // Act
             new FixtureFullProcess().WriteFilesToCaseDirectory(test);
 
+            // Assert
             Assert.Equal(bytes, File.ReadAllBytes(Path.Combine(directory, "example.BiomSharp.encoded-15.wsq")));
             Assert.Equal(referenceBytes, File.ReadAllBytes(Path.Combine(directory, "example.original-15.wsq")));
             Assert.Equal(test.OriginalPgm.Data, File.ReadAllBytes(Path.Combine(directory, "example.original.pgm")));
@@ -104,11 +116,16 @@ public class EncodingComparisonTests
     [Fact]
     public void Fixture_assertion_accepts_matching_wsq_data()
     {
+        // Arrange
         byte[] reference = CreateFixture();
         var fixture = new FixtureFullProcess();
 
-        fixture.AssertEncoding(
-            new DataContainerWsq("reference.wsq", reference), new DataContainerWsq("encoded.wsq", reference.ToArray()));
+        // Act
+        var exception = Record.Exception(() => fixture.AssertEncoding(
+            new DataContainerWsq("reference.wsq", reference), new DataContainerWsq("encoded.wsq", reference.ToArray())));
+
+        // Assert
+        Assert.Null(exception);
     }
 
     [Theory]
@@ -116,6 +133,7 @@ public class EncodingComparisonTests
     [InlineData(true)]
     public void Full_process_encoding_assertion_accepts_matching_wsq_ignoring_comments(bool addComment)
     {
+        // Arrange
         byte[] referenceBytes = CreateFixture();
         byte[] comment = { 0xff, 0xa8, 0, 5, 65, 66, 67 };
         byte[] encodedBytes = addComment
@@ -124,18 +142,26 @@ public class EncodingComparisonTests
         var reference = new DataContainerWsq("reference.wsq", referenceBytes);
         var encoded = new DataContainerWsq("encoded.wsq", encodedBytes);
 
-        new FixtureFullProcess().AssertEncoding(reference, encoded);
+        // Act
+        var exception = Record.Exception(() => new FixtureFullProcess().AssertEncoding(reference, encoded));
+
+        // Assert
+        Assert.Null(exception);
     }
 
     [Fact]
     public void Full_process_encoding_assertion_reports_coefficient_failures_with_file_names()
     {
+        // Arrange
         var reference = new DataContainerWsq("reference.wsq", CreateFixture());
         var encoded = new DataContainerWsq("encoded.wsq", CreateFixture(181));
 
-        var error = Assert.Throws<Xunit.Sdk.TrueException>(() =>
+        // Act
+        var exception = Record.Exception(() =>
             new FixtureFullProcess().AssertEncoding(reference, encoded));
 
+        // Assert
+        var error = Assert.IsType<Xunit.Sdk.TrueException>(exception);
         Assert.Contains("coefficient indices differ", error.Message);
         Assert.Contains(reference.FileName, error.Message);
         Assert.Contains(encoded.FileName, error.Message);
@@ -144,6 +170,7 @@ public class EncodingComparisonTests
     [Fact]
     public void Full_process_encoding_assertion_reports_all_comparison_failures()
     {
+        // Arrange
         byte[] bytes = CreateFixture();
         var reference = new DataContainerWsq("reference.wsq", bytes);
         var inspection = reference.WsqInspection with
@@ -153,9 +180,12 @@ public class EncodingComparisonTests
         };
         var encoded = new DataContainerWsq("encoded.wsq", bytes, inspection);
 
-        var error = Assert.Throws<Xunit.Sdk.TrueException>(() =>
+        // Act
+        var exception = Record.Exception(() =>
             new FixtureFullProcess().AssertEncoding(reference, encoded));
 
+        // Assert
+        var error = Assert.IsType<Xunit.Sdk.TrueException>(exception);
         Assert.Contains("dimensions differ", error.Message);
         Assert.Contains("Frame header Ev", error.Message);
         Assert.Contains("prescribed", error.Message);
@@ -167,10 +197,15 @@ public class EncodingComparisonTests
     [InlineData(false)]
     public void Full_process_encoding_assertion_rejects_missing_container(bool missingReference)
     {
+        // Arrange
         var valid = new DataContainerWsq("valid.wsq", CreateFixture());
 
-        Assert.Throws<Xunit.Sdk.NotNullException>(() =>
+        // Act
+        var exception = Record.Exception(() =>
             new FixtureFullProcess().AssertEncoding(missingReference ? null! : valid, missingReference ? valid : null!));
+
+        // Assert
+        Assert.IsType<Xunit.Sdk.NotNullException>(exception);
     }
 
     [Theory]
@@ -178,11 +213,16 @@ public class EncodingComparisonTests
     [InlineData(false)]
     public void Full_process_encoding_assertion_rejects_empty_data(bool emptyReference)
     {
+        // Arrange
         var valid = new DataContainerWsq("valid.wsq", CreateFixture());
         var empty = new DataContainerWsq("empty.wsq", Array.Empty<byte>());
 
-        Assert.Throws<Xunit.Sdk.NotEmptyException>(() =>
+        // Act
+        var exception = Record.Exception(() =>
             new FixtureFullProcess().AssertEncoding(emptyReference ? empty : valid, emptyReference ? valid : empty));
+
+        // Assert
+        Assert.IsType<Xunit.Sdk.NotEmptyException>(exception);
     }
 
     [Theory]
@@ -190,6 +230,7 @@ public class EncodingComparisonTests
     [InlineData(32, 0)]
     public void Full_process_encoding_assertion_rejects_nonpositive_reference_dimensions(int width, int height)
     {
+        // Arrange
         byte[] bytes = CreateFixture();
         var valid = new DataContainerWsq("valid.wsq", bytes);
         var inspection = valid.WsqInspection with
@@ -198,9 +239,12 @@ public class EncodingComparisonTests
         };
         var reference = new DataContainerWsq("reference.wsq", bytes, inspection);
 
-        var error = Assert.Throws<Xunit.Sdk.TrueException>(() =>
+        // Act
+        var exception = Record.Exception(() =>
             new FixtureFullProcess().AssertEncoding(reference, valid));
 
+        // Assert
+        var error = Assert.IsType<Xunit.Sdk.TrueException>(exception);
         Assert.Contains("reference WSQ dimensions must be positive", error.Message);
     }
 
@@ -209,32 +253,46 @@ public class EncodingComparisonTests
     [InlineData(ExecutableType.NativDswq)]
     public void Encoding_test_case_assertion_accepts_each_encoder(ExecutableType executable)
     {
+        // Arrange
         var testCase = CreateEncodingTestCase();
         testCase.AddWsqContainer(executable, new DataContainerWsq("encoded.wsq", CreateFixture()));
 
-        new FixtureFullProcess().AssertTestCaseEncoding(testCase);
+        // Act
+        var exception = Record.Exception(() => new FixtureFullProcess().AssertTestCaseEncoding(testCase));
+
+        // Assert
+        Assert.Null(exception);
     }
 
     [Fact]
     public void Encoding_test_case_assertion_accepts_multiple_valid_results()
     {
+        // Arrange
         var testCase = CreateEncodingTestCase();
         testCase.AddWsqContainer(ExecutableType.BiomSharp, new DataContainerWsq("BiomSharp.wsq", CreateFixture()));
         testCase.AddWsqContainer(ExecutableType.NativDswq, new DataContainerWsq("NBIS.wsq", CreateFixture()));
 
-        new FixtureFullProcess().AssertTestCaseEncoding(testCase);
+        // Act
+        var exception = Record.Exception(() => new FixtureFullProcess().AssertTestCaseEncoding(testCase));
+
+        // Assert
+        Assert.Null(exception);
     }
 
     [Fact]
     public void Encoding_test_case_assertion_checks_results_after_the_first()
     {
+        // Arrange
         var testCase = CreateEncodingTestCase();
         testCase.AddWsqContainer(ExecutableType.BiomSharp, new DataContainerWsq("BiomSharp.wsq", CreateFixture()));
         testCase.AddWsqContainer(ExecutableType.NativDswq, new DataContainerWsq("NBIS.wsq", CreateFixture(181)));
 
-        var error = Assert.Throws<Xunit.Sdk.TrueException>(() =>
+        // Act
+        var exception = Record.Exception(() =>
             new FixtureFullProcess().AssertTestCaseEncoding(testCase));
 
+        // Assert
+        var error = Assert.IsType<Xunit.Sdk.TrueException>(exception);
         Assert.Contains("NBIS.wsq", error.Message);
         Assert.Contains("coefficient indices differ", error.Message);
     }
@@ -242,19 +300,29 @@ public class EncodingComparisonTests
     [Fact]
     public void Encoding_test_case_assertion_rejects_missing_test_case()
     {
-        Assert.Throws<Xunit.Sdk.NotNullException>(() =>
-            new FixtureFullProcess().AssertTestCaseEncoding(null!));
+        // Arrange
+        var fixture = new FixtureFullProcess();
+
+        // Act
+        var exception = Record.Exception(() => fixture.AssertTestCaseEncoding(null!));
+
+        // Assert
+        Assert.IsType<Xunit.Sdk.NotNullException>(exception);
     }
 
     [Fact]
     public void Encoding_test_case_assertion_rejects_missing_reference()
     {
+        // Arrange
         var testCase = CreateEncodingTestCase() with { OriginalWsqData = null };
         testCase.AddWsqContainer(ExecutableType.BiomSharp, new DataContainerWsq("encoded.wsq", CreateFixture()));
 
-        var error = Assert.Throws<Xunit.Sdk.TrueException>(() =>
+        // Act
+        var exception = Record.Exception(() =>
             new FixtureFullProcess().AssertTestCaseEncoding(testCase));
 
+        // Assert
+        var error = Assert.IsType<Xunit.Sdk.TrueException>(exception);
         Assert.Contains("missing reference WSQ", error.Message);
         Assert.Contains(testCase.CaseId.ImageName, error.Message);
     }
@@ -262,11 +330,15 @@ public class EncodingComparisonTests
     [Fact]
     public void Encoding_test_case_assertion_rejects_empty_results()
     {
+        // Arrange
         var testCase = CreateEncodingTestCase();
 
-        var error = Assert.Throws<Xunit.Sdk.TrueException>(() =>
+        // Act
+        var exception = Record.Exception(() =>
             new FixtureFullProcess().AssertTestCaseEncoding(testCase));
 
+        // Assert
+        var error = Assert.IsType<Xunit.Sdk.TrueException>(exception);
         Assert.Contains("missing encoding results", error.Message);
         Assert.Contains(testCase.CaseId.ImageName, error.Message);
     }
@@ -274,12 +346,16 @@ public class EncodingComparisonTests
     [Fact]
     public void Encoding_test_case_assertion_rejects_null_result()
     {
+        // Arrange
         var testCase = CreateEncodingTestCase();
         testCase.EncodedResults[ExecutableType.BiomSharp] = null!;
 
-        var error = Assert.Throws<Xunit.Sdk.TrueException>(() =>
+        // Act
+        var exception = Record.Exception(() =>
             new FixtureFullProcess().AssertTestCaseEncoding(testCase));
 
+        // Assert
+        var error = Assert.IsType<Xunit.Sdk.TrueException>(exception);
         Assert.Contains("missing BiomSharp encoding result", error.Message);
     }
 
@@ -293,14 +369,18 @@ public class EncodingComparisonTests
     [Fact]
     public void Fixture_assertion_reports_coefficient_requirement_failures()
     {
+        // Arrange
         var reference = new DataContainerWsq("reference.wsq", CreateFixture());
         var actual = new DataContainerWsq("encoded.wsq", CreateFixture(181));
         var fixture = new FixtureFullProcess();
 
-        var exception = Assert.Throws<Xunit.Sdk.TrueException>(() =>
+        // Act
+        var exception = Record.Exception(() =>
             fixture.AssertEncoding(reference, actual));
 
-        Assert.Contains("coefficient indices differ", exception.Message);
+        // Assert
+        var error = Assert.IsType<Xunit.Sdk.TrueException>(exception);
+        Assert.Contains("coefficient indices differ", error.Message);
     }
 
     [Theory]
@@ -308,14 +388,20 @@ public class EncodingComparisonTests
     [InlineData(false)]
     public void Encoding_input_rejects_malformed_wsq_data(bool invalidActual)
     {
+        // Arrange
         byte[] valid = CreateFixture();
         byte[] invalid = valid.Concat(new byte[] { 0 }).ToArray();
-        Assert.Throws<InvalidDataException>(() =>
+
+        // Act
+        var exception = Record.Exception(() =>
         {
             var reference = new DataContainerWsq("reference.wsq", invalidActual ? valid : invalid);
             var encoded = new DataContainerWsq("encoded.wsq", invalidActual ? invalid : valid);
             new FixtureFullProcess().AssertEncoding(reference, encoded);
         });
+
+        // Assert
+        Assert.IsType<InvalidDataException>(exception);
     }
 
     [Theory]
@@ -438,6 +524,7 @@ public class EncodingComparisonTests
     [InlineData(320, 239, false)]
     public void Comparison_uses_baseline_dimensions(int encodedWidth, int encodedHeight, bool passes)
     {
+        // Arrange
         var baseline = Example();
         baseline = baseline with { Header = baseline.Header with { Width = 320, Height = 240 } };
         var encoded = baseline with
@@ -445,22 +532,28 @@ public class EncodingComparisonTests
             Header = baseline.Header with { Width = encodedWidth, Height = encodedHeight }
         };
 
+        // Act
         var comparison = EncodingTestComparison.Compare(baseline, encoded);
 
+        // Assert
         Assert.Equal(passes, comparison.Failures.Count == 0);
     }
 
     [Fact]
     public void Comparison_uses_first_argument_as_size_tolerance_baseline()
     {
+        // Arrange
         var baseline = Example() with { SizeWithoutComments = 100000 };
         var encoded = baseline with { SizeWithoutComments = 99600 };
 
+        // Act
         var comparison = EncodingTestComparison.Compare(baseline, encoded);
+        var reversed = EncodingTestComparison.Compare(encoded, baseline);
 
+        // Assert
         Assert.Equal(0.4m, comparison.SizeDifferencePercent);
         Assert.Empty(comparison.Failures);
-        Assert.NotEmpty(EncodingTestComparison.Compare(encoded, baseline).Failures);
+        Assert.NotEmpty(reversed.Failures);
     }
 
     [Theory]

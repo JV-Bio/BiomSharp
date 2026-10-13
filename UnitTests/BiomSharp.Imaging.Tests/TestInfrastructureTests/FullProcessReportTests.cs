@@ -21,10 +21,13 @@ public class FullProcessReportTests : IDisposable
     [InlineData(2.25f, "5")]
     public void Report_uses_effective_bitrate_for_configuration_and_filename(float bitRate, string ratio)
     {
+        // Arrange
         var test = CreateTest(bitRate: bitRate);
 
+        // Act
         using var json = WriteReport(test);
 
+        // Assert
         Assert.Equal(bitRate, json.RootElement.GetProperty("WsqParameters").GetProperty("BitRate").GetSingle());
         Assert.Equal(ratio, json.RootElement.GetProperty("ConfiguredRatio").GetString());
         Assert.Equal($"example.comparison-{ratio}.json", Path.GetFileName(Assert.Single(Directory.GetFiles(_directory))));
@@ -33,9 +36,13 @@ public class FullProcessReportTests : IDisposable
     [Fact]
     public void Report_records_case_environment_and_original_image_without_claiming_certification()
     {
+        // Arrange
         var test = CreateTest();
 
+        // Act
         using var json = WriteReport(test);
+
+        // Assert
         var root = json.RootElement;
 
         Assert.Equal(test.CaseId.TestName, root.GetProperty("TestName").GetString());
@@ -62,14 +69,17 @@ public class FullProcessReportTests : IDisposable
     [InlineData(false, false, "None")]
     public void Report_identifies_operations_from_available_results(bool encoding, bool decoding, string operation)
     {
+        // Arrange
         var test = CreateTest(256, 256);
         if (encoding)
             test = AddEncoding(test, includeReference: false);
         if (!decoding)
             test.DecodedResults.Clear();
 
+        // Act
         using var json = WriteReport(test);
 
+        // Assert
         Assert.Equal(operation, json.RootElement.GetProperty("CodecOperation").GetString());
         Assert.Equal(encoding ? 1 : 0, json.RootElement.GetProperty("EncodedComparisons").EnumerateObject().Count());
         Assert.Equal(decoding ? 1 : 0, json.RootElement.GetProperty("DecodedComparisons").EnumerateObject().Count());
@@ -80,9 +90,13 @@ public class FullProcessReportTests : IDisposable
     [InlineData(true)]
     public void Report_records_reference_availability_without_changing_configuration(bool includeReference)
     {
+        // Arrange
         var test = AddEncoding(CreateTest(256, 256), includeReference);
 
+        // Act
         using var json = WriteReport(test);
+
+        // Assert
         var root = json.RootElement;
         var encoded = root.GetProperty("EncodedComparisons").GetProperty("BiomSharp");
 
@@ -112,13 +126,17 @@ public class FullProcessReportTests : IDisposable
     [Fact]
     public void Report_distinguishes_file_and_pixel_ratios_with_and_without_comments()
     {
+        // Arrange
         var test = AddEncoding(CreateTest(256, 256), includeReference: true);
         var wsq = test.EncodedResults[ExecutableType.BiomSharp];
         long originalSize = test.OriginalPgm.Data.LongLength;
         long rawSize = 256 * 256;
         long sizeWithoutComments = test.OriginalWsqData!.Data.LongLength;
 
+        // Act
         using var json = WriteReport(test);
+
+        // Assert
         var encoded = json.RootElement.GetProperty("EncodedComparisons").GetProperty("BiomSharp");
 
         Assert.Equal(sizeWithoutComments + 7, encoded.GetProperty("SizeInBytes").GetInt64());
@@ -136,6 +154,7 @@ public class FullProcessReportTests : IDisposable
     [Fact]
     public void Report_keeps_full_nfiq_results_per_image_and_decoder_comparisons_compact()
     {
+        // Arrange
         var test = CreateTest();
         var originalAnalysis = new Nfiq2Analysis(80, allMeasures: true);
         originalAnalysis.SetQualityFeatures(new List<string> { "Feature" }, new[] { 1.5 });
@@ -144,7 +163,10 @@ public class FullProcessReportTests : IDisposable
         AddNativeBaseline(test);
         test.DecodedResults[ExecutableType.NativDswq].Nfiq2Data.UpdateValues("test-version", 0, new Nfiq2Analysis(77));
 
+        // Act
         using var json = WriteReport(test);
+
+        // Assert
         var root = json.RootElement;
         var original = root.GetProperty("OriginalImage");
         Assert.Equal("Calculated", original.GetProperty("Nfiq2Status").GetString());
@@ -186,13 +208,17 @@ public class FullProcessReportTests : IDisposable
     public void Report_requires_both_nfiq_scores_before_calculating_a_difference(
         bool unavailableOriginal, int errorCode, string status)
     {
+        // Arrange
         var test = CreateTest();
         var decodedPgm = test.DecodedResults[ExecutableType.BiomSharp];
         test.OriginalPgm.Nfiq2Data.UpdateValues("test-version", 0, new Nfiq2Analysis(80));
         decodedPgm.Nfiq2Data.UpdateValues("test-version", 0, new Nfiq2Analysis(75));
         (unavailableOriginal ? test.OriginalPgm : decodedPgm).Nfiq2Data.UpdateValues("test-version", errorCode, null);
 
+        // Act
         using var json = WriteReport(test);
+
+        // Assert
         var decoded = json.RootElement.GetProperty("DecodedComparisons").GetProperty("BiomSharp");
         var unavailable = unavailableOriginal ? json.RootElement.GetProperty("OriginalImage") : decoded;
         Assert.Equal(status, unavailable.GetProperty("Nfiq2Status").GetString());
@@ -207,6 +233,7 @@ public class FullProcessReportTests : IDisposable
     [InlineData(true, "NoOtherDecoderResults")]
     public void Report_explains_why_decoder_comparisons_are_unavailable(bool nativeOnly, string status)
     {
+        // Arrange
         var test = CreateTest();
         if (nativeOnly)
         {
@@ -214,7 +241,10 @@ public class FullProcessReportTests : IDisposable
             AddNativeBaseline(test);
         }
 
+        // Act
         using var json = WriteReport(test);
+
+        // Assert
         var comparisons = json.RootElement.GetProperty("DecoderComparisons");
         Assert.Equal(status, comparisons.GetProperty("Status").GetString());
         Assert.False(string.IsNullOrWhiteSpace(comparisons.GetProperty("Limitation").GetString()));
@@ -225,11 +255,15 @@ public class FullProcessReportTests : IDisposable
     [Fact]
     public void Report_records_missing_decoded_image_without_asserting_or_claiming_a_result()
     {
+        // Arrange
         var test = CreateTest();
         AddNativeBaseline(test);
         test.DecodedResults[ExecutableType.BiomSharp] = null!;
 
+        // Act
         using var json = WriteReport(test);
+
+        // Assert
         var decoded = json.RootElement.GetProperty("DecodedComparisons").GetProperty("BiomSharp");
         Assert.Equal("Unavailable", decoded.GetProperty("Nfiq2Status").GetString());
         Assert.Equal(JsonValueKind.Null, decoded.GetProperty("SizeInBytes").ValueKind);
@@ -248,13 +282,17 @@ public class FullProcessReportTests : IDisposable
     [Fact]
     public void Report_includes_additional_decoders_and_records_failed_requirements_without_asserting()
     {
+        // Arrange
         var test = CreateTest();
         AddNativeBaseline(test);
         var additional = (ExecutableType)123;
         test.AddPgmContainer(additional, new DataContainerPgm("AdditionalDecoder", "other.pgm",
             SimpleBitmap.Gray8(new byte[] { 255, 255, 255, 255 }, 2, 2)));
 
+        // Act
         using var json = WriteReport(test);
+
+        // Assert
         var results = json.RootElement.GetProperty("DecoderComparisons").GetProperty("Results");
         Assert.Equal(2, results.EnumerateObject().Count());
         var result = results.GetProperty(additional.ToString());

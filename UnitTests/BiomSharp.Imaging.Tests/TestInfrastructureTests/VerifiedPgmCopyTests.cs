@@ -11,13 +11,16 @@ public class VerifiedPgmCopyTests
     [InlineData(256, 1)]
     public void Copy_verifies_decoded_pixels_instead_of_header_and_pixel_bytes(int width, int height)
     {
+        // Arrange
         var pixels = Enumerable.Range(0, width * height).Select(i => (byte)(i % 256)).ToArray();
         var bitmap = SimpleBitmap.Gray8(pixels, width, height);
         string path = Path.Combine(Path.GetTempPath(), $"verified-pgm-{Guid.NewGuid():N}.pgm");
         try
         {
+            // Act
             new CopyFixture().WritePgm(path, bitmap);
 
+            // Assert
             Assert.True(new FileInfo(path).Length > pixels.Length);
             var pgm = new PgmCodec();
             using var stream = File.OpenRead(path);

@@ -7,9 +7,14 @@ public class WsqParameterTests
     [Fact]
     public void BitRate_DefaultIs0_75()
     {
+        // Arrange
         var parameters = new WsqParameters();
 
-        Assert.Equal(0.75f, parameters.BitRate);
+        // Act
+        float bitRate = parameters.BitRate;
+
+        // Assert
+        Assert.Equal(0.75f, bitRate);
     }
 
     [Theory]
@@ -20,8 +25,13 @@ public class WsqParameterTests
     [InlineData(0.1f)]
     public void BitRate_BelowMinimum_IsClampedToMinimum(float bitRate)
     {
-        var parameters = new WsqParameters { BitRate = bitRate };
+        // Arrange
+        var parameters = new WsqParameters();
 
+        // Act
+        parameters.BitRate = bitRate;
+
+        // Assert
         Assert.Equal(0.1875f, parameters.BitRate);
         Assert.Equal(WsqParameters.BitRateMinValue, parameters.BitRate);
     }
@@ -33,8 +43,13 @@ public class WsqParameterTests
     [InlineData(float.PositiveInfinity)]
     public void BitRate_AboveMaximum_IsClampedToMaximum(float bitRate)
     {
-        var parameters = new WsqParameters { BitRate = bitRate };
+        // Arrange
+        var parameters = new WsqParameters();
 
+        // Act
+        parameters.BitRate = bitRate;
+
+        // Assert
         Assert.Equal(2.25f, parameters.BitRate);
         Assert.Equal(WsqParameters.BitRateMaxValue, parameters.BitRate);
     }
@@ -48,37 +63,47 @@ public class WsqParameterTests
     [InlineData(2.25f)]
     public void BitRate_WithinInclusiveLimits_IsUnchanged(float bitRate)
     {
-        var parameters = new WsqParameters { BitRate = bitRate };
+        // Arrange
+        var parameters = new WsqParameters();
 
+        // Act
+        parameters.BitRate = bitRate;
+
+        // Assert
         Assert.Equal(bitRate, parameters.BitRate);
     }
 
     [Fact]
     public void BitRate_ImmediatelyOutsideLimits_IsClamped()
     {
-        var parameters = new WsqParameters
-        {
-            BitRate = MathF.BitDecrement(WsqParameters.BitRateMinValue)
-        };
+        // Arrange
+        var parameters = new WsqParameters();
 
-        Assert.Equal(WsqParameters.BitRateMinValue, parameters.BitRate);
-
+        // Act
+        parameters.BitRate = MathF.BitDecrement(WsqParameters.BitRateMinValue);
+        float minimum = parameters.BitRate;
         parameters.BitRate = MathF.BitIncrement(WsqParameters.BitRateMaxValue);
 
+        // Assert
+        Assert.Equal(WsqParameters.BitRateMinValue, minimum);
         Assert.Equal(WsqParameters.BitRateMaxValue, parameters.BitRate);
     }
 
     [Fact]
     public void BitRate_ImmediatelyInsideLimits_IsUnchanged()
     {
+        // Arrange
         float aboveMinimum = MathF.BitIncrement(WsqParameters.BitRateMinValue);
         float belowMaximum = MathF.BitDecrement(WsqParameters.BitRateMaxValue);
-        var parameters = new WsqParameters { BitRate = aboveMinimum };
+        var parameters = new WsqParameters();
 
-        Assert.Equal(aboveMinimum, parameters.BitRate);
-
+        // Act
+        parameters.BitRate = aboveMinimum;
+        float minimum = parameters.BitRate;
         parameters.BitRate = belowMaximum;
 
+        // Assert
+        Assert.Equal(aboveMinimum, minimum);
         Assert.Equal(belowMaximum, parameters.BitRate);
     }
 }

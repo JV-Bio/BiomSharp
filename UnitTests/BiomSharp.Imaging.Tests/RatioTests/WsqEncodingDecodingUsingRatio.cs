@@ -63,14 +63,14 @@ public class WsqEncodingDecodingUsingRatio
     [InlineData("cmp00010.pgm", 5f)]
     public void Encode_PgmFile_at_Ratio_matches(string filename, float ratio)
     {
-        // Arrange.
+        // Arrange
         var bitRate = _fixture.GetBitRate(ratio);
 
         WsqParameters wsqParameters = _fixture.GetEncodingParameters(ratio, WsqFilterType.Odd7x9);
         var testCase = _fixture.ArrangeEncoding(filename, wsqParameters);        
         _fixture.CalculateNfiq(testCase.OriginalPgm);       // Calcualte the nfiq2 values for the original image.
 
-        // Act - Encoding using BiomSharp
+        // Act
         _fixture.EncodePgmData(testCase, testCase.OriginalPgm);
         if (testCase.EncodedResults.TryGetValue(ExecutableType.BiomSharp, out DataContainerWsq? encoded) && encoded != null)
         {
@@ -86,11 +86,10 @@ public class WsqEncodingDecodingUsingRatio
             _fixture.CalculateNfiq(item.Value);
         }
 
-        /// Assert.
+        // Assert
         Assert.Equal(bitRate, wsqParameters.BitRate);
         Assert.Equal(bitRate, testCase.Parameters.BitRate);
 
-        // Assert.
         _fixture.WriteComparisonReport(testCase);
         _fixture.WriteFilesToCaseDirectory(testCase);
         _fixture.WriteBmpFilesToCaseDirectory(testCase);
