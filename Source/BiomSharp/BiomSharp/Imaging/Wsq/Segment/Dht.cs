@@ -96,7 +96,7 @@ namespace BiomSharp.Imaging.Wsq.Segment
         {
             writer.Write(Th);
             writer.Write(L);
-            writer.Write(new Span<byte>(V, 0, CodeCount).ToArray());
+            writer.Write(V.AsSpan(0, CodeCount));
         }
     }
 

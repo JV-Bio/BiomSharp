@@ -2,6 +2,7 @@
 // Licensed under the MIT License
 // See: https://biomsharp.github.io/BiomSharp/LICENSE.txt
 
+using System.Buffers.Binary;
 using System.Text;
 
 namespace BiomSharp.Imaging.Wsq.IO
@@ -10,33 +11,42 @@ namespace BiomSharp.Imaging.Wsq.IO
     {
         public Stream BaseStream { get; private set; }
 
-        public EndianBinaryWriter(Stream stream) => BaseStream = stream;
-
-        // WSQ is big endian encoded.
-        private void WriteBigEndian(byte[] buffer)
+        public EndianBinaryWriter(Stream stream)
         {
-            int i = 0;
-            int j = buffer.Length - 1;
-            while (i < j)
-            {
-                (buffer[j], buffer[i]) = (buffer[i], buffer[j]);
-                i++;
-                j--;
-            }
-            BaseStream.Write(buffer, 0, buffer.Length);
+            BaseStream = stream;
         }
 
-        public void Write(byte[] bytes) => BaseStream.Write(bytes, 0, bytes.Length);
+        public void Write(ReadOnlySpan<byte> bytes) => BaseStream.Write(bytes);
 
-        public void Write(byte b) => BaseStream.Write(new byte[] { b }, 0, 1);
+        public void Write(byte b) => BaseStream.WriteByte(b);
 
-        public void Write(short s) => WriteBigEndian(BitConverter.GetBytes(s));
+        public void Write(short s)
+        {
+            Span<byte> buffer = stackalloc byte[sizeof(short)];
+            BinaryPrimitives.WriteInt16BigEndian(buffer, s);
+            BaseStream.Write(buffer);
+        }
 
-        public void Write(ushort u) => WriteBigEndian(BitConverter.GetBytes(u));
+        public void Write(ushort u)
+        {
+            Span<byte> buffer = stackalloc byte[sizeof(ushort)];
+            BinaryPrimitives.WriteUInt16BigEndian(buffer, u);
+            BaseStream.Write(buffer);
+        }
 
-        public void Write(int i) => WriteBigEndian(BitConverter.GetBytes(i));
+        public void Write(int i)
+        {
+            Span<byte> buffer = stackalloc byte[sizeof(int)];
+            BinaryPrimitives.WriteInt32BigEndian(buffer, i);
+            BaseStream.Write(buffer);
+        }
 
-        public void Write(uint u) => WriteBigEndian(BitConverter.GetBytes(u));
+        public void Write(uint u)
+        {
+            Span<byte> buffer = stackalloc byte[sizeof(uint)];
+            BinaryPrimitives.WriteUInt32BigEndian(buffer, u);
+            BaseStream.Write(buffer);
+        }
 
         public void Write(string s)
         {
