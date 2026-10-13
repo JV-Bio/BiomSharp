@@ -146,10 +146,10 @@ public class EncodingComparisonTests
     {
         byte[] bytes = CreateFixture();
         var reference = new DataContainerWsq("reference.wsq", bytes);
-        var inspection = reference.WspInspection with
+        var inspection = reference.WsqInspection with
         {
-            Header = reference.WspInspection.Header with { Width = 1, Encoder = 0, LowFilterLength = 8 },
-            SizeWithoutComments = reference.WspInspection.SizeWithoutComments * 2
+            Header = reference.WsqInspection.Header with { Width = 1, Encoder = 0, LowFilterLength = 8 },
+            SizeWithoutComments = reference.WsqInspection.SizeWithoutComments * 2
         };
         var encoded = new DataContainerWsq("encoded.wsq", bytes, inspection);
 
@@ -192,9 +192,9 @@ public class EncodingComparisonTests
     {
         byte[] bytes = CreateFixture();
         var valid = new DataContainerWsq("valid.wsq", bytes);
-        var inspection = valid.WspInspection with
+        var inspection = valid.WsqInspection with
         {
-            Header = valid.WspInspection.Header with { Width = width, Height = height }
+            Header = valid.WsqInspection.Header with { Width = width, Height = height }
         };
         var reference = new DataContainerWsq("reference.wsq", bytes, inspection);
 

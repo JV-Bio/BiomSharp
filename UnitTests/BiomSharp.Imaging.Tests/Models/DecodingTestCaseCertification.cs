@@ -23,7 +23,7 @@ internal sealed record DecodingTestCaseCertification(TestCaseData TestCaseData)
     public DataContainerPgm OriginalImage => TestCaseData.OriginalPgm;
 
     /// <summary>Frame information inspected from the original NIST WSQ file.</summary>
-    public WsqFrame OriginalWspHeader => OriginalWsq.WspInspection.Header;
+    public WsqFrame OriginalWspHeader => OriginalWsq.WsqInspection.Header;
 
     /// <summary>
     /// Raw grayscale bitmap reconstructed from OriginalWsq by NIST dwsq during Arrange.

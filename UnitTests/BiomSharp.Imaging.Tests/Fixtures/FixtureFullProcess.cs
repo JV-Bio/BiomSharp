@@ -311,17 +311,17 @@ public class FixtureFullProcess : FixtureTestBase<FixtureFullProcess>
             item => new
             {
                 SizeInBytes = item.Value.Data.LongLength,
-                Metadata = WsqMetadata.Create(item.Value.WspInspection, originalFileSize),
+                Metadata = WsqMetadata.Create(item.Value.WsqInspection, originalFileSize),
                 FileCompressionRatio = (decimal)originalFileSize / item.Value.Data.LongLength,
                 RawPixelCompressionRatio = (decimal)rawPixelSize / item.Value.Data.LongLength,
-                FileCompressionRatioExcludingComments = (decimal)originalFileSize / item.Value.WspInspection.SizeWithoutComments,
-                RawPixelCompressionRatioExcludingComments = (decimal)rawPixelSize / item.Value.WspInspection.SizeWithoutComments,
+                FileCompressionRatioExcludingComments = (decimal)originalFileSize / item.Value.WsqInspection.SizeWithoutComments,
+                RawPixelCompressionRatioExcludingComments = (decimal)rawPixelSize / item.Value.WsqInspection.SizeWithoutComments,
                 AchievedBitsPerPixel = item.Value.Data.LongLength * 8m / rawPixelSize,
                 ReferenceComparison = reference == null ? null : new
                 {
                     BytesIdentical = item.Value.Data.AsSpan().SequenceEqual(reference.Data),
                     SizeDifferenceInBytes = item.Value.Data.LongLength - reference.Data.LongLength,
-                    Structure = EncodingTestComparison.Compare(reference.WspInspection, item.Value.WspInspection)
+                    Structure = EncodingTestComparison.Compare(reference.WsqInspection, item.Value.WsqInspection)
                 }
             });
 
@@ -356,7 +356,7 @@ public class FixtureFullProcess : FixtureTestBase<FixtureFullProcess>
             {
                 reference.FileName,
                 SizeInBytes = reference.Data.LongLength,
-                Metadata = WsqMetadata.Create(reference.WspInspection, originalFileSize)
+                Metadata = WsqMetadata.Create(reference.WsqInspection, originalFileSize)
             },
             EncodedComparisons = encodedComparisons,
             DecodedComparisons = decodedComparisons,
@@ -484,12 +484,6 @@ public class FixtureFullProcess : FixtureTestBase<FixtureFullProcess>
         }
     }
 
-    internal void AssertTestCase(TestCaseData testCase)
-    {
-        AssertTestCaseDecoding(testCase);
-        AssertTestCaseEncoding(testCase);
-    }
-
     /// <summary>
     /// Asserts that an encoded WSQ satisfies <see cref="WsqRequirementsEncoding"/>
     /// against the corresponding baseLineReference WSQ.
@@ -510,38 +504,107 @@ public class FixtureFullProcess : FixtureTestBase<FixtureFullProcess>
         Assert.NotEmpty(baseLineReference.Data);
         Assert.NotEmpty(encoded.Data);
 
-        var referenceInspection = baseLineReference.WspInspection;
+        var referenceInspection = baseLineReference.WsqInspection;
         Assert.True(referenceInspection.Header.Width > 0 && referenceInspection.Header.Height > 0,
             $"{baseLineReference.FileName}: reference WSQ dimensions must be positive.");
 
-        var comparison = EncodingTestComparison.Compare(referenceInspection, encoded.WspInspection);
+        var comparison = EncodingTestComparison.Compare(referenceInspection, encoded.WsqInspection);
         Assert.True(comparison.Failures.Count == 0,
             $"{encoded.FileName}: encoding requirements failed against reference '{baseLineReference.FileName}'." +
             Environment.NewLine + string.Join(Environment.NewLine, comparison.Failures));
     }
 
     /// <summary>
-    /// Asserts that the test case contains at least one encoding result and a baseLineReference WSQ,
-    /// then validates each generated encoding using <see cref="AssertEncoding"/>.
+    /// Validates all encoding results against the source image and configured header values,
+    /// using the test case's original WSQ as a comparison baseline when available.
     /// </summary>
-    /// <param name="testCase">The test case containing the baseLineReference WSQ and encoding results.</param>
+    /// <param name="testCase">The source image, encoding parameters, results, and optional reference WSQ.</param>
     /// <remarks>
-    /// Missing expected results or a missing baseLineReference must fail validation rather than
-    /// silently pass without evaluating the encoding requirements.
+    /// A null test case, missing encoding results, or an unavailable source bitmap fails validation.
+    /// A missing original WSQ does not fail validation; only the baseline-independent checks run.
+    /// Callers requiring certification reference comparisons must separately require a reference WSQ.
     /// </remarks>
     internal void AssertTestCaseEncoding(TestCaseData testCase)
     {
         Assert.NotNull(testCase);
+        AssertTestCaseEncoding(testCase, testCase.OriginalWsqData);
+    }
+
+    /// <summary>
+    /// Asserts positive frame dimensions, configured black/white calibration and filter lengths,
+    /// and encoder number two; also checks source dimensions when a bitmap is supplied.
+    /// </summary>
+    /// <param name="wsqParameters">The expected black/white calibration and selected analysis filter.</param>
+    /// <param name="simpleBmp">The source bitmap supplying expected dimensions, or null to omit that comparison.</param>
+    /// <param name="wsqInspection">The inspected encoding whose header is validated.</param>
+    /// <remarks>
+    /// Inspection exposes reconstruction filter lengths: its low-pass length is compared with
+    /// the selected analysis high-pass length, and its high-pass length with the analysis low-pass length.
+    /// These checks do not compare filter coefficients, the implementation identifier, or other
+    /// encoding parameters, and do not require a reference WSQ.
+    /// </remarks>
+    private void AssertWsqInspection(WsqParameters wsqParameters, SimpleBitmap simpleBmp, WsqInspection wsqInspection)
+    {
+        var filter = wsqParameters.Filter.GetFilter();
+        Assert.True(wsqInspection.Header.Width > 0 && wsqInspection.Header.Height > 0);
+        Assert.Equal(wsqParameters.Black, (int)wsqInspection.Header.Black);
+        Assert.Equal(wsqParameters.White, (int)wsqInspection.Header.White);
+        // The Dtt class automatic switches the L1 and L0 when reading the filter settings.        
+        // So for asserting the values are correct, we need to switch them
+        Assert.Equal(filter.Hi.Count, wsqInspection.Header.LowFilterLength);        
+        Assert.Equal(filter.Lo.Count, wsqInspection.Header.HighFilterLength);
+        Assert.Equal(WsqRequirementsEncoding.RequiredEncoderNumber, wsqInspection.Header.Encoder);
+        Assert.Equal(simpleBmp.Height, wsqInspection.Header.Height);
+        Assert.Equal(simpleBmp.Width, wsqInspection.Header.Width);
+    }
+
+    /// <summary>
+    /// Requires a source bitmap and at least one nonempty encoding result, validates each result's
+    /// inspected header, and optionally compares each encoding with the supplied reference WSQ.
+    /// </summary>
+    /// <param name="testCase">The source image, encoding parameters, and encoding results to validate.</param>
+    /// <param name="baseLineReference">
+    /// A compatible reference WSQ for the same source image and encoding configuration,
+    /// or null to perform only baseline-independent validation.
+    /// </param>
+    /// <remarks>
+    /// Header validation uses <see cref="AssertWsqInspection"/> and always includes source dimensions.
+    /// When a baseline is supplied, <see cref="AssertEncoding"/> additionally evaluates the prescribed
+    /// encoder requirements, including compressed size, quantization widths, and coefficient agreement.
+    /// This overload uses only the supplied baseline; it does not fall back to the test case's original WSQ.
+    /// Passing null intentionally skips reference comparisons and does not establish certification compliance.
+    /// </remarks>
+    internal void AssertTestCaseEncoding(TestCaseData testCase, DataContainerWsq? baseLineReference)
+    {
+        Assert.NotNull(testCase);
         string imageName = testCase.CaseId.ImageName;
-        Assert.True(testCase.OriginalWsqData != null, $"{imageName}: missing reference WSQ.");
         Assert.True(testCase.EncodedResults.Count > 0, $"{imageName}: missing encoding results.");
 
+
+        SimpleBitmap? simpleBmp = testCase.OriginalPgm.GetSimpleBitmap();
+        Assert.NotNull(simpleBmp);
         foreach (var result in testCase.EncodedResults)
         {
             Assert.True(result.Value != null, $"{imageName}: missing {result.Key} encoding result.");
-            AssertEncoding(testCase.OriginalWsqData!, result.Value!);
+            Assert.NotEmpty(result.Value!.Data);
+            
+
+            // Assert - WsqInspection
+            WsqInspection wsqInspection = result.Value!.WsqInspection;
+            AssertWsqInspection(testCase.Parameters, simpleBmp, wsqInspection);
+
+            // Check if there is a Wsq Encoded baseline to compare against.
+            if (baseLineReference == null)
+            {
+                continue;
+            }
+
+            AssertEncoding(baseLineReference, result.Value!);
         }
     }
+
+
+
 
     /// <summary>
     /// Asserts that the test case contains the expected BiomSharp and NIST decoding results,

@@ -12,18 +12,18 @@ public sealed class DataContainerWsq
 
         FileName = fileName;
         Data = data;
-        WspInspection = WsqInspection.Read(Data);
+        WsqInspection = WsqInspection.Read(Data);
     }
 
     internal DataContainerWsq(string fileName, byte[] data, WsqInspection wsqInspection) : this(fileName, data)
     {
-        WspInspection = wsqInspection;
+        WsqInspection = wsqInspection;
     }
 
 
     public readonly byte[] Data;
     public readonly string FileName;
-    internal readonly WsqInspection WspInspection;
+    internal readonly WsqInspection WsqInspection;
 
-    internal WsqMetadata GetMetadata() => WsqMetadata.Create(WspInspection);
+    internal WsqMetadata GetMetadata() => WsqMetadata.Create(WsqInspection);
 }

@@ -1,4 +1,5 @@
 ﻿using BiomSharp.Imaging.Pgm;
+using BiomSharp.Imaging.Tests.Helpers;
 using BiomSharp.Imaging.Tests.Models;
 using BiomSharp.Imaging.Wsq;
 using BiomSharp.Imaging.Wsq.Tree;
@@ -17,13 +18,7 @@ public class FixtureEncodingFilter : FixtureEncodingBase<FixtureEncodingFilter>
     internal EncodingTestScenario ArrangeParallelEncodingScenario(WsqParameters parameters)
     {
         var filterType = parameters.Filter;
-        Filter sharedFilter = filterType switch
-        {
-            WsqFilterType.Odd7x9 => Filter.Odd7x9,
-            WsqFilterType.Even8x8 => Filter.Even8x8,
-            _ => throw new ArgumentOutOfRangeException(nameof(filterType), filterType, "Unsupported built-in filter.")
-        };
-        
+        Filter sharedFilter = filterType.GetFilter();
         float[] originalHi = sharedFilter.Hi.ToArray();
         float[] originalLo = sharedFilter.Lo.ToArray();
         string[] imageNames = 
