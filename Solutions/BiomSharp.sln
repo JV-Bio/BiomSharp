@@ -9,10 +9,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "BiomSharp", "BiomSharp", "{
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BiomSharp", "..\Source\BiomSharp\BiomSharp\BiomSharp.csproj", "{96B5B5FA-546B-4F48-9705-793C8BDDCD37}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BiomSharp.Windows", "..\Source\BiomSharp\BiomSharp.Windows\BiomSharp.Windows.csproj", "{BE9DE80A-9126-4D62-9B55-8381B4D64CA3}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BiomSharp.ImageSharp", "..\Source\BiomSharp\BiomSharp.ImageSharp\BiomSharp.ImageSharp.csproj", "{7BCB6E22-9FD5-4CE6-9974-12CC3E1867DC}"
-EndProject
 Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Unmanaged", "..\Source\BiomSharp\Unmanaged\Unmanaged.shproj", "{385DD826-3A4C-4E05-B735-113CED052D6B}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "UnitTests", "UnitTests", "{961BBB38-364B-4036-85F3-0E737C416737}"
@@ -35,22 +31,6 @@ Global
 		{96B5B5FA-546B-4F48-9705-793C8BDDCD37}.Release|Any CPU.Build.0 = Release|x64
 		{96B5B5FA-546B-4F48-9705-793C8BDDCD37}.Release|x64.ActiveCfg = Release|x64
 		{96B5B5FA-546B-4F48-9705-793C8BDDCD37}.Release|x64.Build.0 = Release|x64
-		{BE9DE80A-9126-4D62-9B55-8381B4D64CA3}.Debug|Any CPU.ActiveCfg = Debug|x64
-		{BE9DE80A-9126-4D62-9B55-8381B4D64CA3}.Debug|Any CPU.Build.0 = Debug|x64
-		{BE9DE80A-9126-4D62-9B55-8381B4D64CA3}.Debug|x64.ActiveCfg = Debug|x64
-		{BE9DE80A-9126-4D62-9B55-8381B4D64CA3}.Debug|x64.Build.0 = Debug|x64
-		{BE9DE80A-9126-4D62-9B55-8381B4D64CA3}.Release|Any CPU.ActiveCfg = Release|x64
-		{BE9DE80A-9126-4D62-9B55-8381B4D64CA3}.Release|Any CPU.Build.0 = Release|x64
-		{BE9DE80A-9126-4D62-9B55-8381B4D64CA3}.Release|x64.ActiveCfg = Release|x64
-		{BE9DE80A-9126-4D62-9B55-8381B4D64CA3}.Release|x64.Build.0 = Release|x64
-		{7BCB6E22-9FD5-4CE6-9974-12CC3E1867DC}.Debug|Any CPU.ActiveCfg = Debug|x64
-		{7BCB6E22-9FD5-4CE6-9974-12CC3E1867DC}.Debug|Any CPU.Build.0 = Debug|x64
-		{7BCB6E22-9FD5-4CE6-9974-12CC3E1867DC}.Debug|x64.ActiveCfg = Debug|x64
-		{7BCB6E22-9FD5-4CE6-9974-12CC3E1867DC}.Debug|x64.Build.0 = Debug|x64
-		{7BCB6E22-9FD5-4CE6-9974-12CC3E1867DC}.Release|Any CPU.ActiveCfg = Release|x64
-		{7BCB6E22-9FD5-4CE6-9974-12CC3E1867DC}.Release|Any CPU.Build.0 = Release|x64
-		{7BCB6E22-9FD5-4CE6-9974-12CC3E1867DC}.Release|x64.ActiveCfg = Release|x64
-		{7BCB6E22-9FD5-4CE6-9974-12CC3E1867DC}.Release|x64.Build.0 = Release|x64
 		{E20BAA9D-A7B3-96A3-C71C-8225CB5CAD9E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{E20BAA9D-A7B3-96A3-C71C-8225CB5CAD9E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E20BAA9D-A7B3-96A3-C71C-8225CB5CAD9E}.Debug|x64.ActiveCfg = Debug|Any CPU
@@ -66,8 +46,6 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{839130FD-E6C8-4FC3-A3E5-EBC0FC6135D8} = {D35D7A3F-CC26-4C0F-962B-DB928EA73DB5}
 		{96B5B5FA-546B-4F48-9705-793C8BDDCD37} = {839130FD-E6C8-4FC3-A3E5-EBC0FC6135D8}
-		{BE9DE80A-9126-4D62-9B55-8381B4D64CA3} = {839130FD-E6C8-4FC3-A3E5-EBC0FC6135D8}
-		{7BCB6E22-9FD5-4CE6-9974-12CC3E1867DC} = {839130FD-E6C8-4FC3-A3E5-EBC0FC6135D8}
 		{385DD826-3A4C-4E05-B735-113CED052D6B} = {839130FD-E6C8-4FC3-A3E5-EBC0FC6135D8}
 		{E20BAA9D-A7B3-96A3-C71C-8225CB5CAD9E} = {961BBB38-364B-4036-85F3-0E737C416737}
 	EndGlobalSection
@@ -76,5 +54,6 @@ Global
 	EndGlobalSection
 	GlobalSection(SharedMSBuildProjectFiles) = preSolution
 		..\Source\BiomSharp\Unmanaged\Unmanaged.projitems*{385dd826-3a4c-4e05-b735-113ced052d6b}*SharedItemsImports = 13
+		..\Source\BiomSharp\Unmanaged\Unmanaged.projitems*{e20baa9d-a7b3-96a3-c71c-8225cb5cad9e}*SharedItemsImports = 5
 	EndGlobalSection
 EndGlobal
