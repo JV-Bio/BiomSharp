@@ -71,6 +71,42 @@ internal static class PerformanceHistoryStore
         return history;
     }
 
+    internal static void RegenerateReport(string directory, string runId, bool refreshComparisons = false)
+    {
+        using FileStream fileLock = AcquireLock(Path.Combine(directory, "history.lock"));
+        PerformanceHistory history = Load(Path.Combine(directory, HistoryFileName));
+        PerformanceRun run = history.Runs.SingleOrDefault(item => item.Id == runId)
+            ?? throw new InvalidDataException($"Performance run not found: {runId}.");
+        int runIndex = history.Runs.IndexOf(run);
+        foreach (PerformanceResult result in run.Results)
+        {
+            PerformanceComparison comparison = result.Comparison
+                ?? throw new InvalidDataException("A recorded result is missing its comparison.");
+            // Rebuild from samples, including reports saved under the old record-to-record semantics.
+            bool IsEarlier(PerformanceResult candidate, int candidateRunIndex) =>
+                candidate.RecordedUtc < result.RecordedUtc ||
+                (candidate.RecordedUtc == result.RecordedUtc && candidateRunIndex < runIndex);
+            var earlier = new PerformanceHistory
+            {
+                Runs = history.Runs.Select((item, index) => item with
+                {
+                    ResultsEncoding = item.ResultsEncoding.Where(candidate => IsEarlier(candidate, index)).ToList(),
+                    ResultsDecoding = item.ResultsDecoding.Where(candidate => IsEarlier(candidate, index)).ToList()
+                }).ToList()
+            };
+            PerformanceComparison recalculated = Compare(earlier, run, result);
+            result.Comparison = refreshComparisons ? recalculated : comparison with
+            {
+                OverallFastestElapsed = recalculated.OverallFastestElapsed
+            };
+        }
+        if (refreshComparisons)
+        {
+            WriteAtomically(Path.Combine(directory, HistoryFileName), JsonSerializer.Serialize(history, JsonOptions));
+        }
+        WriteAtomically(Path.Combine(directory, ReportFileName), CreateReport(run));
+    }
+
     private static PerformanceHistory LoadBaseline(string path)
     {
         if (!File.Exists(path))
@@ -105,7 +141,9 @@ internal static class PerformanceHistoryStore
                 if (result.Parameters == null || result.SamplesMilliseconds == null ||
                     result.SamplesMilliseconds.Length != run.MeasuredIterations ||
                     result.SamplesMilliseconds.Any(value => !double.IsFinite(value) || value < 0) ||
-                    (result.EncodingMetrics != null && result.EncodingMetrics.Samples.Length != run.MeasuredIterations))
+                    (result.Metrics != null && result.Metrics.Samples.Length != run.MeasuredIterations) ||
+                    (result.Operation != "Encoding" && result.EncodingMetrics != null) ||
+                    (result.Operation != "Decoding" && result.DecodingMetrics != null))
                 {
                     throw new InvalidDataException($"Invalid performance samples in run {run.Id}.");
                 }
@@ -128,20 +166,26 @@ internal static class PerformanceHistoryStore
         {
             return new PerformanceComparison("NonComparableConfiguration");
         }
-        var previous = history.Runs.AsEnumerable().Reverse()
+        var candidates = history.Runs.AsEnumerable().Reverse()
             .Where(candidate => candidate.Id != run.Id && candidate.CompatibleWith(run))
             .SelectMany(candidate => candidate.Results.Select(item => new { Run = candidate, Result = item }))
             .Where(candidate => candidate.Result.ValidationPassed && candidate.Result.SameCase(result) &&
-                (candidate.Result.EncodingMetrics == null) == (result.EncodingMetrics == null))
+                (result.Operation == "Decoding" ||
+                    (candidate.Result.Metrics == null) == (result.Metrics == null)))
             .OrderByDescending(candidate => candidate.Result.RecordedUtc)
-            .FirstOrDefault();
+            .ToArray();
+        var previous = candidates.FirstOrDefault();
+        double currentMinimum = result.SamplesMilliseconds.Min();
+        double? previousMinimum = candidates
+            .Select(candidate => (double?)candidate.Result.SamplesMilliseconds.Min()).Min();
+        var fastest = new FastestElapsedComparison(previousMinimum, currentMinimum);
         if (previous == null)
         {
-            return new PerformanceComparison("NoComparablePreviousResult");
+            return new PerformanceComparison("NoComparablePreviousResult", OverallFastestElapsed: fastest);
         }
 
-        EncodingMetrics? oldMetrics = previous.Result.EncodingMetrics;
-        EncodingMetrics? newMetrics = result.EncodingMetrics;
+        PerformanceMetrics? oldMetrics = previous.Result.Metrics;
+        PerformanceMetrics? newMetrics = result.Metrics;
         return new PerformanceComparison("Compared", previous.Run.Id, previous.Result.RecordedUtc,
             new MetricChange(previous.Result.MedianMilliseconds, result.MedianMilliseconds),
             new MetricChange(previous.Result.MaximumMilliseconds, result.MaximumMilliseconds),
@@ -157,7 +201,8 @@ internal static class PerformanceHistoryStore
             Change(oldMetrics?.Gen2Collections, newMetrics?.Gen2Collections),
             oldMetrics == null || newMetrics == null ? null :
                 oldMetrics.Samples.Select(sample => sample.OutputSha256)
-                    .SequenceEqual(newMetrics.Samples.Select(sample => sample.OutputSha256)));
+                    .SequenceEqual(newMetrics.Samples.Select(sample => sample.OutputSha256)),
+            fastest);
     }
 
     private static MetricChange? Change(double? previous, double? current) =>
@@ -217,7 +262,10 @@ internal static class PerformanceHistoryStore
         text.AppendLine($"Recorded cases in this run: {run.ResultsEncoding.Count} encoding, {run.ResultsDecoding.Count} decoding. Unexecuted cases remain in history.json.");
         text.AppendLine();
         text.AppendLine("Negative changes mean lower measurements, not proof of a statistically significant improvement. Comparisons use the latest compatible, validated result for each case.");
-        text.AppendLine("Allocated bytes cover the synchronous encoding thread. CPU time and GC counts are process-wide. Memory snapshots are process-wide context, not per-operation usage or peak memory; GC and retained buffers affect them.");
+        text.AppendLine("Overall Fastest elapsed compares this run's fastest sample (Current) against the all-time record from earlier compatible, validated runs (Previous) for the exact operation, file, bitrate, input and parameters. Change is Current minus Previous; a positive change means this run was slower. Only a faster sample replaces the record carried forward. Other rows compare against the latest eligible result, not necessarily the record-setting run.");
+        text.AppendLine("Without eligible earlier results, the first record has no Previous or Change. Failed validation, Debug builds and debugger-attached runs cannot establish records.");
+        text.AppendLine("Allocated bytes cover the synchronous encoding or decoding thread. CPU time and GC counts are process-wide. Memory snapshots are process-wide context, not per-operation usage or peak memory; GC and retained buffers affect them. Decoding excludes ToRaw and pixel hashing; output size and hashes describe decoded pixels, not the compressed input.");
+        text.AppendLine("Timing-only decoding baselines supply elapsed-time comparisons and fastest records. Metrics absent from the previous result remain N/A, not zero. Older decoding timings used fewer measurement probes, so small timing differences should be interpreted cautiously.");
         foreach (PerformanceResult result in run.Results.OrderBy(item => item.Operation).ThenBy(item => item.Filename).ThenBy(item => item.BitRate))
         {
             PerformanceComparison comparison = result.Comparison
@@ -235,13 +283,21 @@ internal static class PerformanceHistoryStore
             if (comparison.PreviousRunId != null)
             {
                 text.AppendLine($"Compared with run `{comparison.PreviousRunId}`, case recorded at {comparison.PreviousRecordedUtc:O}.");
+                if (result.Operation == "Decoding" && result.DecodingMetrics != null &&
+                    comparison.MedianAllocatedBytes == null)
+                {
+                    text.AppendLine("The previous decoding result contains timings only. Allocation, CPU, memory, GC and output-hash comparisons are unavailable because those measurements were not recorded.");
+                }
             }
             text.AppendLine();
             text.AppendLine("| Metric | Previous | Current | Change | Change % |");
             text.AppendLine("|---|---:|---:|---:|---:|");
+            FastestElapsedComparison? fastest = comparison.OverallFastestElapsed;
+            AddMetric(text, "Overall Fastest elapsed (ms)", fastest?.Current,
+                fastest == null ? null : Change(fastest.Previous, fastest.Current));
             AddMetric(text, "Median elapsed (ms)", result.MedianMilliseconds, comparison.MedianMilliseconds);
             AddMetric(text, "Maximum elapsed (ms)", result.MaximumMilliseconds, comparison.MaximumMilliseconds);
-            if (result.EncodingMetrics is EncodingMetrics metrics)
+            if (result.Metrics is PerformanceMetrics metrics)
             {
                 AddMetric(text, "Median allocated (bytes)", metrics.MedianAllocatedBytes, comparison.MedianAllocatedBytes);
                 AddMetric(text, "Maximum allocated (bytes)", metrics.MaximumAllocatedBytes, comparison.MaximumAllocatedBytes);
@@ -254,13 +310,14 @@ internal static class PerformanceHistoryStore
                 AddMetric(text, "Gen 1 collections (all samples)", metrics.Gen1Collections, comparison.Gen1Collections);
                 AddMetric(text, "Gen 2 collections (all samples)", metrics.Gen2Collections, comparison.Gen2Collections);
                 text.AppendLine();
-                text.AppendLine($"Encoded output hashes identical to previous: {comparison.OutputBytesIdentical?.ToString() ?? "not compared"}.");
+                string outputKind = result.Operation == "Encoding" ? "Encoded output" : "Decoded pixel";
+                text.AppendLine($"{outputKind} hashes identical to previous: {comparison.OutputBytesIdentical?.ToString() ?? "not compared"}.");
             }
         }
         return text.ToString();
     }
 
-    private static void AddMetric(StringBuilder text, string name, double current, MetricChange? change)
+    private static void AddMetric(StringBuilder text, string name, double? current, MetricChange? change)
     {
         static string Format(double? value) => value?.ToString("0.###", CultureInfo.InvariantCulture) ?? "N/A";
         text.AppendLine($"| {name} | {Format(change?.Previous)} | {Format(current)} | {Format(change?.Delta)} | {Format(change?.PercentChange)} |");

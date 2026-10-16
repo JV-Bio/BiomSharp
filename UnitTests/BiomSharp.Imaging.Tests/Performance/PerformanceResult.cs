@@ -1,13 +1,19 @@
 using BiomSharp.Imaging.Wsq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace BiomSharp.Imaging.Tests.Performance;
 
 internal sealed record PerformanceResult(string Operation, string Filename, string Setting, float BitRate,
     int Width, int Height, string InputSha256, double[] SamplesMilliseconds,
     WsqParameters Parameters, DateTimeOffset RecordedUtc, bool ValidationPassed, string? ValidationFailure,
-    EncodingMetrics? EncodingMetrics)
+    PerformanceMetrics? EncodingMetrics)
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PerformanceMetrics? DecodingMetrics { get; init; }
+
+    internal PerformanceMetrics? Metrics => Operation == "Encoding" ? EncodingMetrics : DecodingMetrics;
+
     public double MedianMilliseconds => Median(SamplesMilliseconds);
     public double MaximumMilliseconds => SamplesMilliseconds.Max();
     public PerformanceComparison? Comparison { get; set; }
@@ -68,6 +74,11 @@ internal sealed record MetricChange(double Previous, double Current)
     public string Direction => Current < Previous ? "Lower" : Current > Previous ? "Higher" : "Unchanged";
 }
 
+internal sealed record FastestElapsedComparison(double? Previous, double Current)
+{
+    public double BestMilliseconds => System.Math.Min(Previous ?? Current, Current);
+}
+
 internal sealed record PerformanceComparison(string Status, string? PreviousRunId = null,
     DateTimeOffset? PreviousRecordedUtc = null, MetricChange? MedianMilliseconds = null,
     MetricChange? MaximumMilliseconds = null, MetricChange? MedianAllocatedBytes = null,
@@ -75,4 +86,4 @@ internal sealed record PerformanceComparison(string Status, string? PreviousRunI
     MetricChange? MedianManagedHeapBytesAfter = null, MetricChange? MedianWorkingSetBytesAfter = null,
     MetricChange? MedianPrivateMemoryBytesAfter = null, MetricChange? MedianOutputBytes = null,
     MetricChange? Gen0Collections = null, MetricChange? Gen1Collections = null, MetricChange? Gen2Collections = null,
-    bool? OutputBytesIdentical = null);
+    bool? OutputBytesIdentical = null, FastestElapsedComparison? OverallFastestElapsed = null);

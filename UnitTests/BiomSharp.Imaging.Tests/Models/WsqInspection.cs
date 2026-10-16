@@ -85,7 +85,7 @@ internal sealed record WsqInspection(WsqFrame Header,
                 Require(coefficients != null, "Entropy block precedes the frame header.");
                 var buffer = coefficients ?? throw new InvalidDataException("Missing coefficient buffer.");
                 DhtTable table = segmenter.DhtTableWithId(block.Td);
-                decoder.Decode(reader, buffer, table, Table.Create(table, CodeEntries.Create(table.GetCodeSizes())));
+                decoder.Decode(reader, buffer, table, table.GetDecodingTable());
                 int start = decodedCount;
                 while (decodedCount < buffer.Pixels.Length && buffer.Pixels[decodedCount] != int.MinValue)
                 {

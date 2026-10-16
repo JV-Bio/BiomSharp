@@ -3,6 +3,7 @@ using BiomSharp.Imaging.Wsq;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace BiomSharp.Imaging.Tests.TestInfrastructureTests;
 
@@ -101,6 +102,7 @@ public sealed class PerformanceHistoryTests : IDisposable
         Assert.Equal("Compared", comparison.Status);
         Assert.Equal("compatible", comparison.PreviousRunId);
         Assert.Equal(100d, comparison.MedianMilliseconds!.Previous);
+        Assert.Equal(new FastestElapsedComparison(100, 80), comparison.OverallFastestElapsed);
         Assert.Equal(3, PerformanceHistoryStore.Load(Path.Combine(_directory, "history.json")).Runs.Count);
     }
 
@@ -143,6 +145,9 @@ public sealed class PerformanceHistoryTests : IDisposable
         Assert.Equal("NonComparableConfiguration", comparison.Status);
         Assert.Null(comparison.PreviousRunId);
         Assert.Null(comparison.MedianMilliseconds);
+        Assert.Null(comparison.OverallFastestElapsed);
+        Assert.Contains("| Overall Fastest elapsed (ms) | N/A | N/A | N/A | N/A |",
+            File.ReadAllText(Path.Combine(_directory, "comparison.md")));
         Assert.Equal(2, PerformanceHistoryStore.Load(Path.Combine(_directory, "history.json")).Runs.Count);
     }
 
@@ -161,6 +166,10 @@ public sealed class PerformanceHistoryTests : IDisposable
         // Assert
         Assert.Equal("NoComparablePreviousResult", comparison.Status);
         Assert.Null(comparison.MedianAllocatedBytes);
+        Assert.Equal(new FastestElapsedComparison(null, 100), comparison.OverallFastestElapsed);
+        string report = File.ReadAllText(Path.Combine(_directory, "comparison.md"));
+        Assert.Contains("| Overall Fastest elapsed (ms) | N/A | 100 | N/A | N/A |", report);
+        Assert.Contains("| Overall Fastest elapsed (ms) | N/A | 80 | N/A | N/A |", report);
         using JsonDocument json = JsonDocument.Parse(File.ReadAllText(Path.Combine(_directory, "history.json")));
         Assert.Equal(3, json.RootElement.GetProperty("SchemaVersion").GetInt32());
         JsonElement storedRun = json.RootElement.GetProperty("Runs")[0];
@@ -190,6 +199,7 @@ public sealed class PerformanceHistoryTests : IDisposable
 
         // Assert
         Assert.Equal("FailedValidation", failed.Status);
+        Assert.Null(failed.OverallFastestElapsed);
         Assert.Contains(failure.ValidationFailure, failedReport);
         Assert.Equal("valid", next.PreviousRunId);
         PerformanceRun saved = PerformanceHistoryStore.Load(Path.Combine(_directory, "history.json"))
@@ -206,7 +216,7 @@ public sealed class PerformanceHistoryTests : IDisposable
         PerformanceResult current = Result("a.pgm", 10, 100);
         current = current with
         {
-            EncodingMetrics = new EncodingMetrics(current.EncodingMetrics!.Samples
+            EncodingMetrics = new PerformanceMetrics(current.EncodingMetrics!.Samples
                 .Select(sample => sample with { OutputSha256 = "changed" }).ToArray())
         };
 
@@ -218,6 +228,10 @@ public sealed class PerformanceHistoryTests : IDisposable
         Assert.Null(comparison.MedianAllocatedBytes!.PercentChange);
         Assert.Equal(10d, comparison.MedianMilliseconds.Delta);
         Assert.False(comparison.OutputBytesIdentical);
+        Assert.Equal(new FastestElapsedComparison(0, 10), comparison.OverallFastestElapsed);
+        Assert.Equal(0d, comparison.OverallFastestElapsed!.BestMilliseconds);
+        Assert.Contains("| Overall Fastest elapsed (ms) | 0 | 10 | 10 | N/A |",
+            File.ReadAllText(Path.Combine(_directory, "comparison.md")));
         Assert.Contains("| Median elapsed (ms) | 0 | 10 | 10 | N/A |",
             File.ReadAllText(Path.Combine(_directory, "comparison.md")));
     }
@@ -472,9 +486,425 @@ public sealed class PerformanceHistoryTests : IDisposable
         Assert.Equal(example.EncodingMetrics.MedianWorkingSetBytesAfter, comparison.MedianWorkingSetBytesAfter!.Previous);
         Assert.Equal(0d, comparison.MedianAllocatedBytes.Delta);
         Assert.True(comparison.OutputBytesIdentical);
+        Assert.Equal(new FastestElapsedComparison(example.SamplesMilliseconds.Min(), example.SamplesMilliseconds.Min()),
+            comparison.OverallFastestElapsed);
         PerformanceRun persisted = PerformanceHistoryStore.Load(Path.Combine(_directory, "history.json")).Runs[0];
         Assert.Equal(JsonSerializer.Serialize(seed), JsonSerializer.Serialize(persisted));
         Assert.Equal(originalBaseline, File.ReadAllBytes(baseline));
+    }
+
+    [Theory]
+    [InlineData("Encoding", 70d, 70d)]
+    [InlineData("Encoding", 90d, 80d)]
+    [InlineData("Encoding", 80d, 80d)]
+    [InlineData("Decoding", 70d, 70d)]
+    [InlineData("Decoding", 90d, 80d)]
+    [InlineData("Decoding", 80d, 80d)]
+    public void Overall_fastest_uses_all_historical_samples_not_the_latest_median(
+        string operation, double currentMinimum, double expectedRecord)
+    {
+        // Arrange
+        PerformanceResult oldest = Result("a.pgm", 100, 1000) with
+        {
+            Operation = operation,
+            EncodingMetrics = operation == "Encoding" ? Result("a.pgm", 100, 1000).EncodingMetrics : null,
+            SamplesMilliseconds = new[] { 100d, 110d, 80d, 120d, 115d }
+        };
+        PerformanceHistoryStore.Append(_directory, Run("oldest"), oldest);
+        PerformanceHistoryStore.Append(_directory, Run("latest"), oldest with
+        {
+            SamplesMilliseconds = Enumerable.Repeat(90d, 5).ToArray(),
+            RecordedUtc = DateTimeOffset.UtcNow
+        });
+        PerformanceResult current = oldest with
+        {
+            SamplesMilliseconds = new[] { currentMinimum, 120d, 130d, 140d, 150d },
+            RecordedUtc = DateTimeOffset.UtcNow
+        };
+
+        // Act
+        PerformanceComparison comparison = PerformanceHistoryStore.Append(_directory, Run("current"), current);
+        PerformanceHistory saved = PerformanceHistoryStore.Load(Path.Combine(_directory, "history.json"));
+
+        // Assert
+        Assert.Equal("latest", comparison.PreviousRunId);
+        Assert.Equal(90d, comparison.MedianMilliseconds!.Previous);
+        Assert.Equal(130d, comparison.MedianMilliseconds.Current);
+        Assert.Equal(new FastestElapsedComparison(80, currentMinimum), comparison.OverallFastestElapsed);
+        Assert.Equal(expectedRecord, comparison.OverallFastestElapsed!.BestMilliseconds);
+        Assert.Equal(comparison.OverallFastestElapsed,
+            Assert.Single(saved.Runs.Single(run => run.Id == "current").Results).Comparison!.OverallFastestElapsed);
+        string report = File.ReadAllText(Path.Combine(_directory, "comparison.md"));
+        string expectedRow = currentMinimum == 70
+            ? "| Overall Fastest elapsed (ms) | 80 | 70 | -10 | -12.5 |"
+            : currentMinimum == 90
+                ? "| Overall Fastest elapsed (ms) | 80 | 90 | 10 | 12.5 |"
+                : "| Overall Fastest elapsed (ms) | 80 | 80 | 0 | 0 |";
+        Assert.Contains(expectedRow, report);
+        Assert.Contains("| Median elapsed (ms) | 90 | 130 | 40 | 44.444 |", report);
+        Assert.Equal(1, report.Split("| Overall Fastest elapsed (ms) |").Length - 1);
+    }
+
+    [Fact]
+    public void Overall_fastest_is_separate_for_each_file_bitrate_and_operation()
+    {
+        // Arrange
+        PerformanceRun prior = Run("prior");
+        PerformanceHistoryStore.Append(_directory, prior, Result("a.pgm", 100, 1000));
+        PerformanceHistoryStore.Append(_directory, prior, Result("b.pgm", 1, 1000));
+        PerformanceHistoryStore.Append(_directory, prior, Result("a.pgm", 2, 1000) with
+        {
+            Setting = "Minimum", BitRate = WsqParameters.BitRateMinValue,
+            Parameters = new WsqParameters { BitRate = WsqParameters.BitRateMinValue }
+        });
+        PerformanceHistoryStore.Append(_directory, prior, Result("a.pgm", 3, 1000) with
+        {
+            Operation = "Decoding", EncodingMetrics = null
+        });
+
+        // Act
+        PerformanceComparison comparison = PerformanceHistoryStore.Append(_directory, Run("current"),
+            Result("a.pgm", 80, 1000));
+
+        // Assert
+        Assert.Equal(new FastestElapsedComparison(100, 80), comparison.OverallFastestElapsed);
+        string report = File.ReadAllText(Path.Combine(_directory, "comparison.md"));
+        Assert.Contains("| Overall Fastest elapsed (ms) | 100 | 80 | -20 | -20 |", report);
+        Assert.DoesNotContain("## Encoding: b.pgm", report);
+    }
+
+    [Theory]
+    [InlineData("Encoding", false, false)]
+    [InlineData("Decoding", false, false)]
+    [InlineData("Encoding", true, false)]
+    [InlineData("Decoding", true, false)]
+    [InlineData("Encoding", false, true)]
+    [InlineData("Decoding", false, true)]
+    public void Regenerating_legacy_report_recovers_records_without_rewriting_history_or_using_future_results(
+        string operation, bool equalTimestamps, bool hasOldRecordComparison)
+    {
+        // Arrange
+        DateTimeOffset timestamp = DateTimeOffset.UtcNow;
+        PerformanceResult old = Result("a.pgm", 70, 1000) with
+        {
+            Operation = operation,
+            EncodingMetrics = operation == "Encoding" ? Result("a.pgm", 70, 1000).EncodingMetrics : null,
+            RecordedUtc = timestamp,
+            Comparison = new PerformanceComparison("Baseline")
+        };
+        PerformanceResult current = old with
+        {
+            SamplesMilliseconds = Enumerable.Repeat(80d, 5).ToArray(),
+            RecordedUtc = equalTimestamps ? timestamp : timestamp.AddMinutes(1),
+            Comparison = new PerformanceComparison("Compared", "prior",
+                MedianMilliseconds: new MetricChange(70, 80),
+                OverallFastestElapsed: hasOldRecordComparison ? new FastestElapsedComparison(70, 70) : null)
+        };
+        PerformanceResult future = old with
+        {
+            SamplesMilliseconds = Enumerable.Repeat(1d, 5).ToArray(),
+            RecordedUtc = equalTimestamps ? timestamp : timestamp.AddMinutes(2)
+        };
+        PerformanceRun WithResult(string id, PerformanceResult result) => Run(id) with
+        {
+            ResultsEncoding = operation == "Encoding" ? new() { result } : new(),
+            ResultsDecoding = operation == "Decoding" ? new() { result } : new()
+        };
+        var history = new PerformanceHistory
+        {
+            Runs = new() { WithResult("prior", old), WithResult("current", current), WithResult("future", future) }
+        };
+        Directory.CreateDirectory(_directory);
+        string path = Path.Combine(_directory, "history.json");
+        string original = JsonSerializer.Serialize(history,
+            new JsonSerializerOptions { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull });
+        File.WriteAllText(path, original);
+
+        // Act
+        PerformanceHistoryStore.RegenerateReport(_directory, "current");
+
+        // Assert
+        if (!hasOldRecordComparison)
+        {
+            Assert.DoesNotContain("OverallFastestElapsed", original);
+        }
+        Assert.Equal(original, File.ReadAllText(path));
+        string report = File.ReadAllText(Path.Combine(_directory, "comparison.md"));
+        Assert.Contains("Run: `current`", report);
+        Assert.Contains("| Overall Fastest elapsed (ms) | 70 | 80 | 10 | 14.286 |", report);
+        Assert.Contains("| Median elapsed (ms) | 70 | 80 | 10 | 14.286 |", report);
+        Assert.Empty(Directory.GetFiles(_directory, "*.tmp"));
+    }
+
+    [Theory]
+    [InlineData("Encoding")]
+    [InlineData("Decoding")]
+    public void Slower_runs_preserve_the_record_and_improvements_become_the_next_reference(string operation)
+    {
+        // Arrange
+        PerformanceResult Case(double duration) => Result("a.pgm", duration, 1000) with
+        {
+            Operation = operation,
+            EncodingMetrics = operation == "Encoding" ? Result("a.pgm", duration, 1000).EncodingMetrics : null
+        };
+        PerformanceHistoryStore.Append(_directory, Run("record"), Case(70));
+
+        // Act
+        PerformanceComparison slower = PerformanceHistoryStore.Append(_directory, Run("slower"), Case(80));
+        string slowerReport = File.ReadAllText(Path.Combine(_directory, "comparison.md"));
+        PerformanceComparison faster = PerformanceHistoryStore.Append(_directory, Run("faster"), Case(65));
+        string fasterReport = File.ReadAllText(Path.Combine(_directory, "comparison.md"));
+        PerformanceComparison next = PerformanceHistoryStore.Append(_directory, Run("next"), Case(75));
+        PerformanceHistory saved = PerformanceHistoryStore.Load(Path.Combine(_directory, "history.json"));
+
+        // Assert
+        Assert.Equal(new FastestElapsedComparison(70, 80), slower.OverallFastestElapsed);
+        Assert.Equal(70d, slower.OverallFastestElapsed!.BestMilliseconds);
+        Assert.Contains("| Overall Fastest elapsed (ms) | 70 | 80 | 10 | 14.286 |", slowerReport);
+        Assert.Equal(new FastestElapsedComparison(70, 65), faster.OverallFastestElapsed);
+        Assert.Equal(65d, faster.OverallFastestElapsed!.BestMilliseconds);
+        Assert.Contains("| Overall Fastest elapsed (ms) | 70 | 65 | -5 | -7.143 |", fasterReport);
+        Assert.Equal(new FastestElapsedComparison(65, 75), next.OverallFastestElapsed);
+        Assert.Equal(65d, next.OverallFastestElapsed!.BestMilliseconds);
+        Assert.Equal(new[] { 70d, 70d, 65d, 65d },
+            saved.Runs.Select(run => Assert.Single(run.Results).Comparison!.OverallFastestElapsed!.BestMilliseconds));
+    }
+
+    [Fact]
+    public void Decoding_measurement_records_the_same_metrics_and_hashes_decoded_pixels()
+    {
+        // Arrange
+        var image = SimpleBitmap.Gray8(Enumerable.Range(0, 4096)
+            .Select(index => (byte)((index * 13 + index / 64 * 7) % 256)).ToArray(), 64, 64);
+        var encoder = new WsqCodec();
+        encoder.FromRaw(image);
+        byte[] encoded = encoder.Encode(new WsqParameters())!;
+        var decoder = new WsqCodec();
+        using var process = Process.GetCurrentProcess();
+
+        // Act
+        DecodingPerformanceSample sample = DecodingPerformanceSample.Measure(decoder, encoded, process);
+
+        // Assert
+        WsqPerformanceTestData.AssertImage(image, sample.Bitmap);
+        Assert.True(sample.Milliseconds > 0);
+        Assert.True(sample.Metrics.AllocatedBytes >= image.Pixels.Length);
+        Assert.Equal(image.Pixels.Length, sample.Metrics.OutputBytes);
+        Assert.Equal(Convert.ToHexString(SHA256.HashData(sample.Bitmap!.Pixels)), sample.Metrics.OutputSha256);
+        Assert.NotEqual(Convert.ToHexString(SHA256.HashData(encoded)), sample.Metrics.OutputSha256);
+        Assert.True(sample.Metrics.Before.ManagedHeapBytes > 0);
+        Assert.True(sample.Metrics.After.WorkingSetBytes > 0);
+        Assert.True(sample.Metrics.After.PrivateMemoryBytes > 0);
+        Assert.True(sample.Metrics.ProcessCpuMilliseconds >= 0);
+        Assert.True(sample.Metrics.Gen0Collections >= 0);
+        Assert.True(sample.Metrics.Gen1Collections >= 0);
+        Assert.True(sample.Metrics.Gen2Collections >= 0);
+    }
+
+    [Fact]
+    public void Measurement_excludes_snapshot_and_result_allocations()
+    {
+        // Arrange
+        using var process = Process.GetCurrentProcess();
+        _ = new PerformanceMeasurement(process).Complete();
+
+        // Act
+        var measurement = new PerformanceMeasurement(process);
+        var buffer = new byte[1024];
+        var (_, metrics) = measurement.Complete();
+        GC.KeepAlive(buffer);
+
+        // Assert
+        Assert.InRange(metrics.AllocatedBytes, 1024, 1088);
+    }
+
+    [Fact]
+    public void Decoding_compares_legacy_timings_and_all_metrics_on_subsequent_runs()
+    {
+        // Arrange
+        PerformanceResult DecodeResult(double milliseconds, long allocated) => Result("a.pgm", milliseconds, allocated) with
+        {
+            Operation = "Decoding", EncodingMetrics = null,
+            DecodingMetrics = Result("a.pgm", milliseconds, allocated).EncodingMetrics
+        };
+        PerformanceHistoryStore.Append(_directory, Run("legacy"),
+            DecodeResult(1, 1000) with { DecodingMetrics = null });
+        PerformanceHistoryStore.Append(_directory, Run("encoding"), Result("a.pgm", 1, 1000));
+        PerformanceResult first = DecodeResult(100, 1000);
+
+        // Act
+        PerformanceComparison initial = PerformanceHistoryStore.Append(_directory, Run("first"), first);
+        string initialReport = File.ReadAllText(Path.Combine(_directory, "comparison.md"));
+        PerformanceComparison next = PerformanceHistoryStore.Append(_directory, Run("next"), DecodeResult(80, 800));
+        PerformanceHistory history = PerformanceHistoryStore.Load(Path.Combine(_directory, "history.json"));
+
+        // Assert
+        Assert.Equal("Compared", initial.Status);
+        Assert.Equal("legacy", initial.PreviousRunId);
+        Assert.Equal(new MetricChange(1, 100), initial.MedianMilliseconds);
+        Assert.Equal(new MetricChange(1, 100), initial.MaximumMilliseconds);
+        Assert.Equal(new FastestElapsedComparison(1, 100), initial.OverallFastestElapsed);
+        Assert.Null(initial.MedianAllocatedBytes);
+        Assert.Null(initial.OutputBytesIdentical);
+        Assert.Contains("previous decoding result contains timings only", initialReport);
+        Assert.Contains("| Median allocated (bytes) | N/A | 1000 | N/A | N/A |", initialReport);
+        Assert.Equal("first", next.PreviousRunId);
+        Assert.Equal(-200d, next.MedianAllocatedBytes!.Delta);
+        Assert.Equal(-20d, next.MedianAllocatedBytes.PercentChange);
+        Assert.NotNull(next.MaximumAllocatedBytes);
+        Assert.NotNull(next.MedianProcessCpuMilliseconds);
+        Assert.NotNull(next.MedianManagedHeapBytesAfter);
+        Assert.NotNull(next.MedianWorkingSetBytesAfter);
+        Assert.NotNull(next.MedianPrivateMemoryBytesAfter);
+        Assert.NotNull(next.MedianOutputBytes);
+        Assert.NotNull(next.Gen0Collections);
+        Assert.NotNull(next.Gen1Collections);
+        Assert.NotNull(next.Gen2Collections);
+        Assert.True(next.OutputBytesIdentical);
+        PerformanceResult saved = Assert.Single(history.Runs.Last().ResultsDecoding);
+        Assert.Null(saved.EncodingMetrics);
+        Assert.Equal(800d, saved.DecodingMetrics!.MedianAllocatedBytes);
+        Assert.Equal(5, saved.DecodingMetrics.Samples.Length);
+        string report = File.ReadAllText(Path.Combine(_directory, "comparison.md"));
+        Assert.Contains("| Median allocated (bytes) | 1000 | 800 | -200 | -20 |", report);
+        Assert.Contains("Decoded pixel hashes identical to previous: True", report);
+        using JsonDocument json = JsonDocument.Parse(File.ReadAllText(Path.Combine(_directory, "history.json")));
+        Assert.Equal(5, json.RootElement.GetProperty("Runs")[3].GetProperty("ResultsDecoding")[0]
+            .GetProperty("DecodingMetrics").GetProperty("Samples").GetArrayLength());
+    }
+
+    [Theory]
+    [InlineData("Failed")]
+    [InlineData("Debug")]
+    [InlineData("Input")]
+    public void Decoding_full_metrics_exclude_ineligible_references(string reason)
+    {
+        // Arrange
+        PerformanceResult first = Result("a.pgm", 100, 1000) with
+        {
+            Operation = "Decoding", EncodingMetrics = null,
+            DecodingMetrics = Result("a.pgm", 100, 1000).EncodingMetrics
+        };
+        PerformanceHistoryStore.Append(_directory, Run("first"), first);
+        PerformanceResult ineligible = first with
+        {
+            RecordedUtc = DateTimeOffset.UtcNow, SamplesMilliseconds = Enumerable.Repeat(1d, 5).ToArray(),
+            ValidationPassed = reason != "Failed", InputSha256 = reason == "Input" ? "other" : first.InputSha256
+        };
+        PerformanceRun run = Run("ineligible");
+        if (reason == "Debug")
+        {
+            run = run with { Environment = run.Environment with { Configuration = "Debug" } };
+        }
+        PerformanceHistoryStore.Append(_directory, run, ineligible);
+        PerformanceResult current = first with
+        {
+            RecordedUtc = DateTimeOffset.UtcNow,
+            DecodingMetrics = new PerformanceMetrics(first.DecodingMetrics!.Samples
+                .Select(sample => sample with { OutputSha256 = "changed-pixels" }).ToArray())
+        };
+
+        // Act
+        PerformanceComparison comparison = PerformanceHistoryStore.Append(_directory, Run("current"), current);
+
+        // Assert
+        Assert.Equal("first", comparison.PreviousRunId);
+        Assert.Equal(100d, comparison.OverallFastestElapsed!.Previous);
+        Assert.False(comparison.OutputBytesIdentical);
+        Assert.Contains("Decoded pixel hashes identical to previous: False",
+            File.ReadAllText(Path.Combine(_directory, "comparison.md")));
+    }
+
+    [Fact]
+    public void Invalid_decoding_metric_sample_count_is_rejected()
+    {
+        // Arrange
+        PerformanceResult result = Result("a.pgm", 100, 1000) with
+        {
+            Operation = "Decoding", EncodingMetrics = null,
+            DecodingMetrics = new PerformanceMetrics(Array.Empty<PerformanceSampleMetrics>())
+        };
+
+        // Act
+        Exception? error = Record.Exception(() => PerformanceHistoryStore.Append(_directory, Run("invalid"), result));
+
+        // Assert
+        Assert.IsType<InvalidDataException>(error);
+        Assert.False(File.Exists(Path.Combine(_directory, "history.json")));
+    }
+
+    [Fact]
+    public void Missing_history_seeds_both_operations_and_compares_available_decoding_baseline_data()
+    {
+        // Arrange
+        string baseline = Path.Combine(TestResources.UnitTestsDirectory, "BiomSharp.Imaging.Tests",
+            "Performance", "Baselines", "initial.json");
+        byte[] originalBaseline = File.ReadAllBytes(baseline);
+        PerformanceRun seed = Assert.Single(PerformanceHistoryStore.Load(baseline).Runs);
+        PerformanceResult example = seed.ResultsDecoding[0];
+        var currentRun = seed with { Id = "current", StartedUtc = DateTimeOffset.UtcNow };
+        PerformanceResult current = example with
+        {
+            RecordedUtc = DateTimeOffset.UtcNow,
+            SamplesMilliseconds = example.SamplesMilliseconds.Select(value => value / 2).ToArray(),
+            DecodingMetrics = Result("sample", 1, 1000).EncodingMetrics
+        };
+
+        // Act
+        PerformanceComparison comparison = PerformanceHistoryStore.Append(_directory, currentRun, current, baseline);
+        PerformanceHistory history = PerformanceHistoryStore.Load(Path.Combine(_directory, "history.json"));
+
+        // Assert
+        Assert.Equal("Compared", comparison.Status);
+        Assert.Equal(seed.Id, comparison.PreviousRunId);
+        Assert.Equal(example.MedianMilliseconds, comparison.MedianMilliseconds!.Previous);
+        Assert.Equal(-50d, comparison.MedianMilliseconds.PercentChange);
+        Assert.Equal(example.MaximumMilliseconds, comparison.MaximumMilliseconds!.Previous);
+        Assert.Equal(example.SamplesMilliseconds.Min(), comparison.OverallFastestElapsed!.Previous);
+        Assert.Null(comparison.MedianAllocatedBytes);
+        Assert.Null(comparison.MedianProcessCpuMilliseconds);
+        Assert.Null(comparison.OutputBytesIdentical);
+        Assert.Equal(30, history.Runs[0].ResultsEncoding.Count);
+        Assert.Equal(30, history.Runs[0].ResultsDecoding.Count);
+        Assert.Equal(JsonSerializer.Serialize(seed), JsonSerializer.Serialize(history.Runs[0]));
+        Assert.Equal(originalBaseline, File.ReadAllBytes(baseline));
+    }
+
+    [Fact]
+    public void Refreshing_comparisons_repairs_existing_decoding_report_without_changing_measurements()
+    {
+        // Arrange
+        PerformanceResult prior = Result("a.pgm", 100, 1000) with
+        {
+            Operation = "Decoding", EncodingMetrics = null
+        };
+        PerformanceHistoryStore.Append(_directory, Run("prior"), prior);
+        PerformanceResult current = prior with
+        {
+            RecordedUtc = DateTimeOffset.UtcNow,
+            SamplesMilliseconds = Enumerable.Repeat(80d, 5).ToArray(),
+            DecodingMetrics = Result("a.pgm", 80, 800).EncodingMetrics
+        };
+        PerformanceHistoryStore.Append(_directory, Run("current"), current);
+        string historyPath = Path.Combine(_directory, "history.json");
+        PerformanceHistory history = PerformanceHistoryStore.Load(historyPath);
+        history.Runs[1].ResultsDecoding[0].Comparison = new PerformanceComparison("NoComparablePreviousResult");
+        File.WriteAllText(historyPath, JsonSerializer.Serialize(history));
+
+        // Act
+        PerformanceHistoryStore.RegenerateReport(_directory, "current", refreshComparisons: true);
+        PerformanceHistory refreshed = PerformanceHistoryStore.Load(historyPath);
+
+        // Assert
+        Assert.Equal(2, refreshed.Runs.Count);
+        Assert.Equal(JsonSerializer.Serialize(history.Runs[0]), JsonSerializer.Serialize(refreshed.Runs[0]));
+        PerformanceResult result = refreshed.Runs[1].ResultsDecoding[0];
+        Assert.Equal(current.SamplesMilliseconds, result.SamplesMilliseconds);
+        Assert.Equal(JsonSerializer.Serialize(current.DecodingMetrics), JsonSerializer.Serialize(result.DecodingMetrics));
+        Assert.Equal("Compared", result.Comparison!.Status);
+        Assert.Equal("prior", result.Comparison.PreviousRunId);
+        Assert.Contains("| Median elapsed (ms) | 100 | 80 | -20 | -20 |",
+            File.ReadAllText(Path.Combine(_directory, "comparison.md")));
     }
 
     private string SaveBaseline()
@@ -497,10 +927,10 @@ public sealed class PerformanceHistoryTests : IDisposable
     private static PerformanceResult Result(string filename, double milliseconds, long allocated)
     {
         var snapshot = new MemorySnapshot(10000, 20000, 30000);
-        var sample = new EncodingSampleMetrics(allocated, 10, 0, 0, 0, snapshot, snapshot, 100, "output-hash");
+        var sample = new PerformanceSampleMetrics(allocated, 10, 0, 0, 0, snapshot, snapshot, 100, "output-hash");
         return new PerformanceResult("Encoding", filename, "Default", 0.75f, 64, 64, "input-hash",
             Enumerable.Repeat(milliseconds, 5).ToArray(), new WsqParameters(), DateTimeOffset.UtcNow, true, null,
-            new EncodingMetrics(Enumerable.Repeat(sample, 5).ToArray()));
+            new PerformanceMetrics(Enumerable.Repeat(sample, 5).ToArray()));
     }
 
     public void Dispose()

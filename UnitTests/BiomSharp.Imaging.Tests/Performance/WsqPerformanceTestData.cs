@@ -67,7 +67,7 @@ public static class WsqPerformanceTestData
 
     internal static void AssertAndRecordResult(string operation, string filename, PerformanceBitRate setting,
         WsqParameters parameters, SimpleBitmap bitmap, string inputSha256, double[] milliseconds,
-        ITestOutputHelper output, Action assertions, EncodingMetrics? encodingMetrics = null)
+        ITestOutputHelper output, Action assertions, PerformanceMetrics? metrics = null)
     {
         try
         {
@@ -76,20 +76,23 @@ public static class WsqPerformanceTestData
         catch (Exception error)
         {
             RecordResult(operation, filename, setting, parameters, bitmap, inputSha256, milliseconds,
-                output, encodingMetrics, error.ToString());
+                output, metrics, error.ToString());
             throw;
         }
         RecordResult(operation, filename, setting, parameters, bitmap, inputSha256, milliseconds,
-            output, encodingMetrics, validationFailure: null);
+            output, metrics, validationFailure: null);
     }
 
     private static void RecordResult(string operation, string filename, PerformanceBitRate setting,
         WsqParameters parameters, SimpleBitmap bitmap, string inputSha256, double[] milliseconds,
-        ITestOutputHelper output, EncodingMetrics? encodingMetrics, string? validationFailure)
+        ITestOutputHelper output, PerformanceMetrics? metrics, string? validationFailure)
     {
         var result = new PerformanceResult(operation, filename, setting.ToString(), parameters.BitRate,
             bitmap.Width, bitmap.Height, inputSha256, milliseconds, parameters, DateTimeOffset.UtcNow,
-            validationFailure == null, validationFailure, encodingMetrics);
+            validationFailure == null, validationFailure, operation == "Encoding" ? metrics : null)
+        {
+            DecodingMetrics = operation == "Decoding" ? metrics : null
+        };
         PerformanceComparison comparison = PerformanceHistoryStore.Append(Report.Directory, Report.Run, result,
             Report.BaselinePath);
         output.WriteLine($"{operation}: {filename}, {setting} ({parameters.BitRate} bpp), " +
@@ -99,9 +102,9 @@ public static class WsqPerformanceTestData
         {
             output.WriteLine($"Sample {i + 1}: {milliseconds[i]:F3} ms.");
         }
-        if (encodingMetrics != null)
+        if (metrics != null)
         {
-            output.WriteLine($"Median allocated bytes per encoding: {encodingMetrics.MedianAllocatedBytes:F0}.");
+            output.WriteLine($"Median allocated bytes per {operation.ToLowerInvariant()}: {metrics.MedianAllocatedBytes:F0}.");
         }
         output.WriteLine($"Comparison: {comparison.Status}; previous run: {comparison.PreviousRunId ?? "none"}.");
         if (comparison.MedianMilliseconds != null)

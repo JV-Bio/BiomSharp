@@ -23,18 +23,16 @@ public class BiomSharpDecodingPerformanceTests
         encoder.FromRaw(bitmap);
         byte[] encoded = encoder.Encode(parameters)
             ?? throw new InvalidDataException($"WSQ encoder returned no output for {filename}.");
+        using var process = Process.GetCurrentProcess();
         var warmUp = new WsqCodec();
-        warmUp.Decode(encoded);
-        var samples = new (SimpleBitmap? Bitmap, double Milliseconds)[WsqPerformanceTestData.MeasuredIterations];
+        _ = DecodingPerformanceSample.Measure(warmUp, encoded, process);
+        var samples = new DecodingPerformanceSample[WsqPerformanceTestData.MeasuredIterations];
 
         // Act
         for (int i = 0; i < samples.Length; i++)
         {
             var codec = new WsqCodec();
-            var timer = Stopwatch.StartNew();
-            codec.Decode(encoded);
-            timer.Stop();
-            samples[i] = (codec.ToRaw(), timer.Elapsed.TotalMilliseconds);
+            samples[i] = DecodingPerformanceSample.Measure(codec, encoded, process);
         }
 
         // Assert
@@ -44,6 +42,6 @@ public class BiomSharpDecodingPerformanceTests
             WsqPerformanceTestData.AssertImage(bitmap, sample.Bitmap);
             Assert.True(sample.Milliseconds <= WsqPerformanceTestData.MaximumMilliseconds,
                 $"Decoding {filename} at {parameters.BitRate} took {sample.Milliseconds:F3} ms; limit: 1000 ms.");
-        }));
+        }), new PerformanceMetrics(samples.Select(sample => sample.Metrics).ToArray()));
     }
 }

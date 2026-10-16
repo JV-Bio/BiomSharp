@@ -551,8 +551,8 @@ public class FixtureFullProcess : FixtureTestBase<FixtureFullProcess>
         Assert.Equal(wsqParameters.White, (int)wsqInspection.Header.White);
         // The Dtt class automatic switches the L1 and L0 when reading the filter settings.        
         // So for asserting the values are correct, we need to switch them
-        Assert.Equal(filter.Hi.Count, wsqInspection.Header.LowFilterLength);        
-        Assert.Equal(filter.Lo.Count, wsqInspection.Header.HighFilterLength);
+        Assert.Equal(filter.Hi.Length, wsqInspection.Header.LowFilterLength);        
+        Assert.Equal(filter.Lo.Length, wsqInspection.Header.HighFilterLength);
         Assert.Equal(WsqRequirementsEncoding.RequiredEncoderNumber, wsqInspection.Header.Encoder);
         Assert.Equal(simpleBmp.Height, wsqInspection.Header.Height);
         Assert.Equal(simpleBmp.Width, wsqInspection.Header.Width);

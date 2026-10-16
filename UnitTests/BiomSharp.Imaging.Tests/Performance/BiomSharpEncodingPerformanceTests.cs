@@ -44,6 +44,6 @@ public class BiomSharpEncodingPerformanceTests
             WsqPerformanceTestData.AssertImage(bitmap, decoder.ToRaw());
             Assert.True(sample.Milliseconds <= WsqPerformanceTestData.MaximumMilliseconds,
                 $"Encoding {filename} at {parameters.BitRate} took {sample.Milliseconds:F3} ms; limit: 1000 ms.");
-        }), new EncodingMetrics(samples.Select(sample => sample.Metrics).ToArray()));
+        }), new PerformanceMetrics(samples.Select(sample => sample.Metrics).ToArray()));
     }
 }
