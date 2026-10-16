@@ -2,23 +2,59 @@
 // Licensed under the MIT License
 // See: https://biomsharp.github.io/BiomSharp/LICENSE.txt
 
-using BiomSharp.Imaging.Wsq.Huffman;
+using System.Buffers;
 using BiomSharp.Imaging.Wsq.Segment;
 
 namespace BiomSharp.Imaging.Wsq
 {
-    internal class Decoder
+    internal class Decoder : IDisposable
     {
         private Huffman.Decoder? huffmanDecoder;
         private WsqPixelBuffer<int>? huffDecoded;
+        private int[]? rentedCoefficients;
+        private readonly Segmenter segmenter;
+        private readonly ArrayPool<int> coefficientPool;
+        private readonly ArrayPool<float> floatPool;
 
         public SimpleBitmap? Decoded { get; private set; }
 
 
-        public Decoder(Segmenter segmenter) => segmenter.SegmentRead += OnSegmentRead;
+        public Decoder(Segmenter segmenter)
+            : this(segmenter, ArrayPool<int>.Shared, ArrayPool<float>.Shared)
+        {
+        }
+
+        internal Decoder(Segmenter segmenter, ArrayPool<int> coefficientPool, ArrayPool<float> floatPool)
+        {
+            ArgumentNullException.ThrowIfNull(segmenter);
+            ArgumentNullException.ThrowIfNull(coefficientPool);
+            ArgumentNullException.ThrowIfNull(floatPool);
+            this.segmenter = segmenter;
+            this.coefficientPool = coefficientPool;
+            this.floatPool = floatPool;
+            segmenter.SegmentRead += OnSegmentRead;
+        }
+
+        private void ReturnCoefficients()
+        {
+            int[]? rented = rentedCoefficients;
+            rentedCoefficients = null;
+            huffDecoded = null;
+            huffmanDecoder = null;
+            if (rented != null)
+            {
+                coefficientPool.Return(rented, clearArray: true);
+            }
+        }
+
+        public void Dispose()
+        {
+            segmenter.SegmentRead -= OnSegmentRead;
+            ReturnCoefficients();
+        }
 
         private static SimpleBitmap Create8bppRaw(
-            float[] img,
+            ReadOnlySpan<float> img,
             int width,
             int height,
             float shift,
@@ -53,13 +89,16 @@ namespace BiomSharp.Imaging.Wsq
             {
                 case Marker.SOF:
                     Sof sof = segmenter.First<Sof>();
+                    ReturnCoefficients();
+                    int length = checked(sof.X * sof.Y);
+                    rentedCoefficients = coefficientPool.Rent(length);
+                    rentedCoefficients.AsSpan(0, length).Clear();
                     huffmanDecoder = Huffman.Decoder.Create();
-                    huffDecoded = new WsqPixelBuffer<int>(sof.X, sof.Y);
+                    huffDecoded = new WsqPixelBuffer<int>(sof.X, sof.Y, rentedCoefficients);
                     break;
                 case Marker.SOB:
                     DhtTable dhtTable = segmenter.DhtTableWithId(((Sob)lastRead).Td);
-                    var hcs = CodeEntries.Create(dhtTable.GetCodeSizes());
-                    var hdt = Table.Create(dhtTable, hcs);
+                    var hdt = dhtTable.GetDecodingTable();
                     if (huffmanDecoder != null
                         &&
                         segmenter.Reader != null
@@ -79,15 +118,31 @@ namespace BiomSharp.Imaging.Wsq
                     var quantizer = Quantizer.Create(sof);
                     if (huffDecoded != null)
                     {
-                        WsqPixelBuffer<float> fImage = quantizer.Unquantize(huffDecoded, segmenter.First<Dqt>());
-                        _ = Transformer.Construct(fImage, segmenter.First<Dtt>(), quantizer);
-                        Decoded = Create8bppRaw(
-                        fImage.Pixels,
-                            fImage.Width,
-                            fImage.Height,
-                            sof.Shift,
-                            sof.Scale,
-                            sof.A, sof.B);
+                        float[] rented = floatPool.Rent(huffDecoded.Length);
+                        try
+                        {
+                            var fImage = new WsqPixelBuffer<float>(sof.X, sof.Y, rented);
+                            try
+                            {
+                                quantizer.Unquantize(huffDecoded, segmenter.First<Dqt>(), fImage);
+                            }
+                            finally
+                            {
+                                ReturnCoefficients();
+                            }
+                            _ = Transformer.Construct(fImage, segmenter.First<Dtt>(), quantizer);
+                            Decoded = Create8bppRaw(
+                                fImage.Pixels.AsSpan(0, fImage.Length),
+                                fImage.Width,
+                                fImage.Height,
+                                sof.Shift,
+                                sof.Scale,
+                                sof.A, sof.B);
+                        }
+                        finally
+                        {
+                            floatPool.Return(rented, clearArray: true);
+                        }
                     }
                     else
                     {

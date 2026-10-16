@@ -20,21 +20,19 @@ namespace BiomSharp.Imaging.Wsq.Huffman
 
         private void Build(Segment.DhtTable dhtTable, CodeEntries hcs)
         {
-            Entries = Enumerable
-                .Range(0, Segment.DhtTable.MaxHuffBits + 1)
-                .Select(dt => new TableEntry())
-                .ToArray();
+            Entries = new TableEntry[Segment.DhtTable.MaxHuffBits + 1];
+            ReadOnlySpan<byte> lengths = dhtTable.L.Span;
             int i2 = 0;
             for (int i = 1; i <= Segment.DhtTable.MaxHuffBits; i++)
             {
-                if (dhtTable.L[i - 1] == 0)
+                if (lengths[i - 1] == 0)
                 {
                     Entries[i].Max = -1;
                     continue;
                 }
                 Entries[i].ValIndex = i2;
                 Entries[i].Min = hcs.Codes[i2].Code;
-                i2 = i2 + dhtTable.L[i - 1] - 1;
+                i2 = i2 + lengths[i - 1] - 1;
                 Entries[i].Max = hcs.Codes[i2].Code;
                 ++i2;
             }

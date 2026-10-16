@@ -72,24 +72,20 @@ namespace BiomSharp.Imaging.Wsq
         public void EnumerateSegments()
         {
             BaseSegment? segment = First();
-            if (segment != null)
+            if (segment == null)
             {
-                while (segment.Marker != Marker.EOI)
-                {
-                    AddReadSegment(segment);
-                    segment =
-                        Next(segment)
-                        ??
-                        throw new WsqCodecException(
-                            "Could not create valid WSQ segment");
-                }
+                throw new WsqCodecException("Failed to enumerate segments");
+            }
+
+            while (segment.Marker != Marker.EOI)
+            {
                 AddReadSegment(segment);
+                segment = Next(segment) ??
+                    throw new WsqCodecException(
+                        "Could not create valid WSQ segment");
             }
-            else
-            {
-                throw new WsqCodecException(
-                    "Failed to enumerate segments");
-            }
+
+            AddReadSegment(segment);
         }
 
         public Segment.DhtTable DhtTableWithId(byte id)
@@ -106,21 +102,22 @@ namespace BiomSharp.Imaging.Wsq
                 $"Dht table with id = '{id}' not found");
         }
 
-        public T First<T>() where T : BaseSegment => segments.OfType<T>().FirstOrDefault()
-                ??
-                throw new WsqCodecException(
-                    $"Type '{typeof(T).Name}' segment not defined");
+        public T First<T>() where T : BaseSegment
+        {
+            return segments.OfType<T>().FirstOrDefault() ??
+                throw new WsqCodecException($"Type '{typeof(T).Name}' segment not defined");
+        }
 
-        public T Last<T>() where T : BaseSegment => segments.OfType<T>().LastOrDefault()
-                ??
-                throw new WsqCodecException(
-                    $"Type '{typeof(T).Name}' segment not defined");
+        public T Last<T>() where T : BaseSegment
+        {
+            return segments.OfType<T>().LastOrDefault() ??
+                throw new WsqCodecException($"Type '{typeof(T).Name}' segment not defined");
+        }
 
         public T? Prior<T>(BaseSegment current) where T : BaseSegment
         {
             int ci = segments.IndexOf(current);
-            return segments.OfType<T>()
-                .LastOrDefault(s => segments.IndexOf(s) < ci);
+            return segments.OfType<T>().LastOrDefault(s => segments.IndexOf(s) < ci);
         }
 
         public int IndexOf<T>(T current) where T : BaseSegment => segments.OfType<T>().ToList().IndexOf(current);

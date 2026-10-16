@@ -6,6 +6,13 @@ namespace BiomSharp.Imaging.Wsq
 {
     internal class WsqPixelBuffer<TPixel> where TPixel : unmanaged
     {
+        /// <summary>
+        /// Backing storage for the image. Only the first <see cref="Length"/> elements
+        /// belong to the image; any spare capacity may contain dirty data from prior use.        
+        /// </summary>
+        /// <remarks>
+        /// Process only Pixels.AsSpan(0, Length), not the entire array or Pixels.Length.
+        /// </remarks>
         public TPixel[] Pixels { get; }
         public int Length => Width * Height;
         public int Width { get; }

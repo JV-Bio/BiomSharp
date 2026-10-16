@@ -367,14 +367,23 @@ namespace BiomSharp.Imaging.Wsq
             }
         }
 
-        public WsqPixelBuffer<float> Unquantize(WsqPixelBuffer<int> huffDecoded, Dqt dqt)
+        public void Unquantize(WsqPixelBuffer<int> huffDecoded, Dqt dqt, WsqPixelBuffer<float> fImage)
         {
+            if (fImage.Width != Width || fImage.Height != Height)
+            {
+                throw new ArgumentException("Unquantized image dimensions must match the quantizer.", nameof(fImage));
+            }
+            if (huffDecoded.Width != Width || huffDecoded.Height != Height)
+            {
+                throw new ArgumentException("Coefficient image dimensions must match the quantizer.", nameof(huffDecoded));
+            }
             if (QTree != null)
             {
                 int ip = 0;
-                var fImage = new WsqPixelBuffer<float>(Width, Height);
-                float[] pix = fImage.Pixels;
-                int[] hdc = huffDecoded.Pixels;
+                Span<float> pix = fImage.Pixels.AsSpan(0, fImage.Length);
+                // Inactive subbands are not written by the loop below.
+                pix.Clear();
+                ReadOnlySpan<int> hdc = huffDecoded.Pixels.AsSpan(0, huffDecoded.Length);
 
                 for (int cnt = 0; cnt < SubbandCount; cnt++)
                 {
@@ -407,7 +416,6 @@ namespace BiomSharp.Imaging.Wsq
                         }
                     }
                 }
-                return fImage;
             }
             else
             {

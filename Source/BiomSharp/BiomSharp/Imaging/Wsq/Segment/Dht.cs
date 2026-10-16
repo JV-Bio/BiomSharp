@@ -15,21 +15,24 @@ namespace BiomSharp.Imaging.Wsq.Segment
         // Th:  (8 bits) Huffman table identifier; specifies one of eight possible destinations at the
         //      decoder into which the Huffman table shall be installed.
         public byte Th { get; private set; }
+        private readonly byte[] lengths = new byte[MaxHuffBits];
+        private readonly byte[] values = new byte[MaxHuffCodes + 1];
+        private readonly Lazy<Table> decodingTable;
+
         // Li:  (8 bits) specifies the number of Huffman codes for each of the 16 possible lengths
-        public byte[] L { get; private set; }
+        public ReadOnlyMemory<byte> L => lengths;
         // Vij: (8 bits) value associated with each Huffman code; specifies, for each i, the value
         //      associated with each Huffman code of length i.The meaning of each value is
         //      determined by the Huffman coding model.
-        public byte[] V { get; private set; }
+        public ReadOnlyMemory<byte> V => values;
 
-        public int CodeCount => L.Aggregate(0, (l1, l2) => l1 + l2);
+        public int CodeCount { get; private set; }
 
         public int SerializeLength => ZeroCodeSize + CodeCount;
 
         public DhtTable()
         {
-            L = new byte[MaxHuffBits];
-            V = new byte[MaxHuffCodes + 1];
+            decodingTable = new Lazy<Table>(() => Table.Create(this, CodeEntries.Create(L.Span)));
         }
 
         public DhtTable(int id)
@@ -41,62 +44,80 @@ namespace BiomSharp.Imaging.Wsq.Segment
             Th = (byte)id;
             for (int i = 0; i < MaxHuffBits; i++)
             {
-                L[i] = (byte)(hBits[i] & 0xFF);
+                lengths[i] = (byte)(hBits[i] & 0xFF);
             }
+
+            UpdateCodeCount();
+
             if (hVals.Length > MaxHuffCodes + 1)
             {
                 throw new WsqCodecException("Huffman code count exceeded 257");
             }
+
             for (int i = 0; i < hVals.Length; i++)
             {
-                V[i] = (byte)(hVals[i] & 0xFF);
+                values[i] = (byte)(hVals[i] & 0xFF);
             }
         }
 
-        public int[] GetCodeSizes()
+        private void UpdateCodeCount()
         {
-            int[] cs = new int[MaxHuffBits];
-            for (int i = 0; i < L.Length; i++)
+            int count = 0;
+            foreach (byte lengthCount in L.Span)
             {
-                cs[i] = L[i];
+                count += lengthCount;
             }
-            return cs;
+
+            CodeCount = count;
+        }
+
+        public Table GetDecodingTable()
+        {
+            return decodingTable.Value;
         }
         private void Read(EndianBinaryReader reader, Dht dht)
         {
             Th = reader.ReadByte();
             for (int i = 0; i < MaxHuffBits; i++)
             {
-                L[i] = reader.ReadByte();
+                lengths[i] = reader.ReadByte();
             }
+
+            UpdateCodeCount();
+
             int sizeToRead = dht.SizeToRead() - ZeroCodeSize;
             if (CodeCount > sizeToRead)
             {
                 throw new WsqCodecException(
                     "Huffman code count exceeds reported length in DHT header");
             }
+
             if (CodeCount > MaxHuffCodes + 1)
             {
                 throw new WsqCodecException("Huffman code count > 257");
             }
+
             for (int j = 0; j < CodeCount; j++)
             {
-                V[j] = reader.ReadByte();
+                values[j] = reader.ReadByte();
             }
+
         }
 
         public static DhtTable CreateRead(EndianBinaryReader reader, Dht dht)
         {
             var table = new DhtTable();
             table.Read(reader, dht);
+            // Validate and prepare once during parsing, before any entropy blocks use this table.
+            _ = table.GetDecodingTable();
             return table;
         }
 
         public void Write(EndianBinaryWriter writer)
         {
             writer.Write(Th);
-            writer.Write(L);
-            writer.Write(V.AsSpan(0, CodeCount));
+            writer.Write(L.Span);
+            writer.Write(V.Span[..CodeCount]);
         }
     }
 
@@ -135,10 +156,10 @@ namespace BiomSharp.Imaging.Wsq.Segment
         public int ReadSize { get; private set; }
         private void Create(EndianBinaryReader reader)
         {
-            _ = CodeEntries.Create(reader, this);
+            AddTable(DhtTable.CreateRead(reader, this));
             while (SizeToRead() > 0)
             {
-                _ = CodeEntries.Create(reader, this);
+                AddTable(DhtTable.CreateRead(reader, this));
             }
         }
 

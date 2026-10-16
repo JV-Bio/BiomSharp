@@ -107,16 +107,17 @@ namespace BiomSharp.Imaging
         public bool IsColor => BitDepth is 24 or 32;
 
         public SimpleBitmap Clone()
-            => IsGray || IsColor
-            ? new SimpleBitmap()
+        {
+            ThrowIfNotValid();
+            return new SimpleBitmap()
             {
                 BitDepth = BitDepth,
                 Width = Width,
                 Height = Height,
                 Resolution = Resolution,
                 Pixels = (byte[])Pixels.Clone(),
-            }
-            : throw new InvalidOperationException("Image bit-depth is not 8, 24 or 32");
+            };
+        }
 
         public static SimpleBitmap? ToGray(SimpleBitmap? raw)
         {
@@ -156,6 +157,16 @@ namespace BiomSharp.Imaging
                 }
             }
             return default;
+        }
+
+        public void ThrowIfNotValid()
+        {
+            if(IsGray || IsColor)
+            {
+                return;
+            }
+
+            throw new InvalidOperationException("Image bit-depth is not 8, 24 or 32");
         }
     }
 }

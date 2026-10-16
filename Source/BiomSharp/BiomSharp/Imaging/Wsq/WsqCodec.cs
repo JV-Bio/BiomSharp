@@ -143,12 +143,13 @@ namespace BiomSharp.Imaging.Wsq
             {
                 using var reader = new EndianBinaryReader(stream);
                 var segmenter = new Segmenter(reader);
-                var decoder = new Decoder(segmenter);
+                using var decoder = new Decoder(segmenter);
                 segmenter.EnumerateSegments();
                 ProcessComments(segmenter.Segments<Com>());
-                decoded = decoder.Decoded?.Clone();
+                decoded = decoder.Decoded;
                 if (decoded != null)
                 {
+                    decoded.ThrowIfNotValid();
                     SetReadParameters(segmenter, out WsqParameters? wsqReadParms);
                     readParms = wsqReadParms as TParms;
                 }

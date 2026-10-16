@@ -2,7 +2,6 @@
 // Licensed under the MIT License
 // See: https://biomsharp.github.io/BiomSharp/LICENSE.txt
 
-using BiomSharp.Imaging.Wsq.IO;
 using BiomSharp.Imaging.Wsq.Segment;
 
 namespace BiomSharp.Imaging.Wsq.Huffman
@@ -15,21 +14,23 @@ namespace BiomSharp.Imaging.Wsq.Huffman
 
     internal class CodeEntries
     {
+        public const int DataSize = DhtTable.MaxHuffCodes + 1;
+
         public CodeEntry[] Codes { get; private set; }
         public int Size { get; private set; }
 
-        private CodeEntries(int length) => Codes = Enumerable
-                .Range(0, length)
-                .Select(hc => new CodeEntry())
-                .ToArray();
+        private CodeEntries()
+        {
+            Codes = new CodeEntry[DataSize];
+        }
 
-        private void CreateCodeSizes(DhtTable table)
+        private void CreateCodeSizes(ReadOnlySpan<byte> huffBits)
         {
             int codes = 1;
             Size = 0;
             for (int i = 1; i <= DhtTable.MaxHuffBits; i++)
             {
-                while (codes <= table.L[i - 1])
+                while (codes <= huffBits[i - 1])
                 {
                     Codes[Size].Size = (short)i;
                     ++Size;
@@ -39,6 +40,7 @@ namespace BiomSharp.Imaging.Wsq.Huffman
             }
             Codes[Size].Size = 0;
         }
+
         private void CreateCodes()
         {
             int ci = 0;
@@ -65,6 +67,7 @@ namespace BiomSharp.Imaging.Wsq.Huffman
                 } while (Codes[ci].Size == size);
             }
         }
+
         public bool CheckAllOnes()
         {
             bool allOnes = false;
@@ -99,6 +102,7 @@ namespace BiomSharp.Imaging.Wsq.Huffman
             }
             Codes[Size].Size = 0;
         }
+
         private void CheckTable()
         {
             if (CheckAllOnes())
@@ -112,25 +116,23 @@ namespace BiomSharp.Imaging.Wsq.Huffman
 
         public static CodeEntries Create(int[] codeSizes)
         {
-            var hcs = new CodeEntries(DhtTable.MaxHuffCodes + 1);
+            var hcs = new CodeEntries();
             hcs.CreateCodeSizes(codeSizes);
             hcs.CreateCodes();
             hcs.CheckTable();
             return hcs;
         }
 
-        public static CodeEntries Create(EndianBinaryReader reader, Dht dht)
+        public static CodeEntries Create(ReadOnlySpan<byte> codeSizes)
         {
-            var hcs = new CodeEntries(DhtTable.MaxHuffCodes + 1);
-            var dhtTable = DhtTable.CreateRead(reader, dht);
-            dht.AddTable(dhtTable);
-            hcs.CreateCodeSizes(dhtTable);
+            var hcs = new CodeEntries();
+            hcs.CreateCodeSizes(codeSizes);
             hcs.CreateCodes();
             hcs.CheckTable();
             return hcs;
         }
 
-        public static CodeEntries Create(int size) => new(DhtTable.MaxHuffCodes + 1)
+        public static CodeEntries Create(int size) => new()
         {
             Size = size,
         };

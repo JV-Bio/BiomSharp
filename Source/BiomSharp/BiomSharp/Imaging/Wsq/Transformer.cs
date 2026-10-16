@@ -14,27 +14,51 @@ namespace BiomSharp.Imaging.Wsq
     {
         private Transformer() { }
 
-        private static void Reconstruct(WsqPixelBuffer<float> image, Dtt dtt, Quantizer quantizer)
+        private static void Reconstruct(WsqPixelBuffer<float> image, Dtt dtt, Quantizer quantizer,
+            ArrayPool<float> scratchPool)
         {
             if (quantizer.WTree != null)
             {
-                float[] temp = new float[image.Length];
-                WTree wtree = quantizer.WTree;
-                for (int node = WTree.Length - 1; node >= 0; node--)
+                // Prepare synthesis coefficients once without modifying the shared DTT.
+                Span<float> negatedHi = stackalloc float[dtt.L0 % 2 == 0 ? dtt.L1 : 0];
+                scoped ReadOnlySpan<float> hi = dtt.DttL1.Span;
+                if (dtt.L0 % 2 == 0)
                 {
-                    int idx = (wtree[node].Y * image.Width) + wtree[node].X;
-                    JoinLets(temp, image.Pixels, 0, idx,
-                        wtree[node].LenX, wtree[node].LenY,
-                        1, image.Width,
-                        dtt.DttL1.Span, dtt.L1,
-                        dtt.DttL0.Span, dtt.L0,
-                        wtree[node].InvC);
-                    JoinLets(image.Pixels, temp, idx, 0,
-                        wtree[node].LenY, wtree[node].LenX,
-                        image.Width, 1,
-                        dtt.DttL1.Span, dtt.L1,
-                        dtt.DttL0.Span, dtt.L0,
-                        wtree[node].InvR);
+                    // L1 is a byte, so this per-reconstruction buffer is bounded to 255 floats.
+                    for (int i = 0; i < negatedHi.Length; i++)
+                    {
+                        negatedHi[i] = -hi[i];
+                    }
+                    hi = negatedHi;
+                }
+
+                float[] rented = scratchPool.Rent(image.Length);
+                try
+                {
+                    Span<float> temp = rented.AsSpan(0, image.Length);
+                    Span<float> pixels = image.Pixels.AsSpan(0, image.Length);
+                    ReadOnlySpan<float> lo = dtt.DttL0.Span;
+                    WTree wtree = quantizer.WTree;
+                    for (int node = WTree.Length - 1; node >= 0; node--)
+                    {
+                        int idx = (wtree[node].Y * image.Width) + wtree[node].X;
+                        JoinLets(temp, pixels, 0, idx,
+                            wtree[node].LenX, wtree[node].LenY,
+                            1, image.Width,
+                            hi, dtt.L1,
+                            lo, dtt.L0,
+                            wtree[node].InvC);
+                        JoinLets(pixels, temp, idx, 0,
+                            wtree[node].LenY, wtree[node].LenX,
+                            image.Width, 1,
+                            hi, dtt.L1,
+                            lo, dtt.L0,
+                            wtree[node].InvR);
+                    }
+                }
+                finally
+                {
+                    scratchPool.Return(rented, clearArray: true);
                 }
             }
             else
@@ -44,17 +68,17 @@ namespace BiomSharp.Imaging.Wsq
         }
 
         private static void JoinLets(
-        float[] newdata,
-        float[] olddata,
+        Span<float> newdata,
+        ReadOnlySpan<float> olddata,
         int newIndex,
         int oldIndex,
         int len1,
         int len2,
         int pitch,
         int stride,
-        ReadOnlySpan<float> hi,        // OPTIMIZATION: Changed from IReadOnlyList to ReadOnlySpan to eliminate virtual interface dispatch and enable JIT devirtualization/unrolling
+        ReadOnlySpan<float> hi,
         int hsz,
-        ReadOnlySpan<float> lo,        // OPTIMIZATION: Changed from IReadOnlyList to ReadOnlySpan to eliminate virtual interface dispatch and enable JIT devirtualization/unrolling
+        ReadOnlySpan<float> lo,
         int lsz,
         int inv)
         {
@@ -81,7 +105,7 @@ namespace BiomSharp.Imaging.Wsq
             float ssfac, osfac, sfac;
 
             da_ev = len2 % 2;
-            bool negateHighPassCoefficients = lsz % 2 == 0;
+            bool evenLowPassLength = lsz % 2 == 0;
             pstr = stride;
             nstr = -pstr;
             if (da_ev != 0)
@@ -95,7 +119,7 @@ namespace BiomSharp.Imaging.Wsq
                 hlen = llen;
             }
 
-            if (!negateHighPassCoefficients)
+            if (!evenLowPassLength)
             {
                 asym = 0;
                 ssfac = 1F;
@@ -199,7 +223,7 @@ namespace BiomSharp.Imaging.Wsq
                         lpx = lspx;
                         lpxstr = lspxstr;
 
-                        newdata[limg] = olddata[lpx] * lo[tap];
+                        float lowPassValue = olddata[lpx] * lo[tap];
                         for (i = tap + 2; i < lsz; i += 2)
                         {
                             if (lpx == lp0)
@@ -227,8 +251,9 @@ namespace BiomSharp.Imaging.Wsq
                                 }
                             }
                             lpx += lpxstr;
-                            newdata[limg] += olddata[lpx] * lo[i];
+                            lowPassValue += olddata[lpx] * lo[i];
                         }
+                        newdata[limg] = lowPassValue;
                         limg += stride;
                     }
                     if (lspx == lp0)
@@ -255,6 +280,7 @@ namespace BiomSharp.Imaging.Wsq
                         fhre = ofhre;
                         sfac = osfac;
 
+                        float highPassValue = newdata[himg];
                         for (i = tap; i < hsz; i += 2)
                         {
                             if (hpx == hp0)
@@ -296,10 +322,10 @@ namespace BiomSharp.Imaging.Wsq
                                     }
                                 }
                             }
-                            float highPassCoefficient = negateHighPassCoefficients ? -hi[i] : hi[i];
-                            newdata[himg] += olddata[hpx] * highPassCoefficient * sfac;
+                            highPassValue += olddata[hpx] * hi[i] * sfac;
                             hpx += hpxstr;
                         }
+                        newdata[himg] = highPassValue;
                         himg += stride;
                     }
                     if (hspx == hp0)
@@ -347,7 +373,7 @@ namespace BiomSharp.Imaging.Wsq
                     lpx = lspx;
                     lpxstr = lspxstr;
 
-                    newdata[limg] = olddata[lpx] * lo[tap];
+                    float lowPassValue = olddata[lpx] * lo[tap];
                     for (i = tap + 2; i < lsz; i += 2)
                     {
                         if (lpx == lp0)
@@ -375,8 +401,9 @@ namespace BiomSharp.Imaging.Wsq
                             }
                         }
                         lpx += lpxstr;
-                        newdata[limg] += olddata[lpx] * lo[i];
+                        lowPassValue += olddata[lpx] * lo[i];
                     }
+                    newdata[limg] = lowPassValue;
                     limg += stride;
                 }
 
@@ -418,6 +445,7 @@ namespace BiomSharp.Imaging.Wsq
                         fhre = ofhre;
                     }
 
+                    float highPassValue = newdata[himg];
                     for (i = tap; i < hsz; i += 2)
                     {
                         if (hpx == hp0)
@@ -459,10 +487,10 @@ namespace BiomSharp.Imaging.Wsq
                                 }
                             }
                         }
-                        float highPassCoefficient = negateHighPassCoefficients ? -hi[i] : hi[i];
-                        newdata[himg] += olddata[hpx] * highPassCoefficient * sfac;
+                        highPassValue += olddata[hpx] * hi[i] * sfac;
                         hpx += hpxstr;
                     }
+                    newdata[himg] = highPassValue;
                     himg += stride;
                 }
             }
@@ -1004,8 +1032,15 @@ namespace BiomSharp.Imaging.Wsq
 
         internal static Transformer Construct(WsqPixelBuffer<float> image, Dtt dtt, Quantizer quantizer)
         {
+            return Construct(image, dtt, quantizer, ArrayPool<float>.Shared);
+        }
+
+        internal static Transformer Construct(WsqPixelBuffer<float> image, Dtt dtt, Quantizer quantizer,
+            ArrayPool<float> scratchPool)
+        {
+            ArgumentNullException.ThrowIfNull(scratchPool);
             var transformer = new Transformer();
-            Reconstruct(image, dtt, quantizer);
+            Reconstruct(image, dtt, quantizer, scratchPool);
             return transformer;
         }
 

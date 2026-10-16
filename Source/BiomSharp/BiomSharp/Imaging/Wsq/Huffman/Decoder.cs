@@ -27,7 +27,8 @@ namespace BiomSharp.Imaging.Wsq.Huffman
                 int bitCount = 0;
                 int nextByte = 0;
                 long eos = reader.BaseStream.Length;
-                int[] pix = hdc.Pixels;
+                Span<int> pix = hdc.Pixels.AsSpan(0, hdc.Length);    // Limit the data to to the logical image size. 
+                ReadOnlySpan<byte> values = dhtTable.V.Span;
 
                 while (reader.BaseStream.Position < eos)
                 {
@@ -49,14 +50,11 @@ namespace BiomSharp.Imaging.Wsq.Huffman
                         }
                     }
                     int inx2 = hdt.Entries[inx].ValIndex + code - hdt.Entries[inx].Min;
-                    int nodeIndex = dhtTable.V[inx2];
+                    int nodeIndex = values[inx2];
 
                     if (nodeIndex is > 0 and <= 100)
                     {
-                        for (int n = 0; n < nodeIndex; n++)
-                        {
-                            pix[decIdx++] = 0;
-                        }
+                        ClearZeroRun(pix, nodeIndex);
                     }
                     else if (nodeIndex is > 106 and < 0xFF)
                     {
@@ -80,19 +78,13 @@ namespace BiomSharp.Imaging.Wsq.Huffman
                     }
                     else if (nodeIndex == 105)
                     {
-                        int n = ReadBits(reader, ref marker, ref bitCount, 8, ref nextByte);
-                        while (n-- > 0)
-                        {
-                            pix[decIdx++] = 0;
-                        }
+                        int runLength = ReadBits(reader, ref marker, ref bitCount, 8, ref nextByte);
+                        ClearZeroRun(pix, runLength);
                     }
                     else if (nodeIndex == 106)
                     {
-                        int n = ReadBits(reader, ref marker, ref bitCount, 16, ref nextByte);
-                        while (n-- > 0)
-                        {
-                            pix[decIdx++] = 0;
-                        }
+                        int runLength = ReadBits(reader, ref marker, ref bitCount, 16, ref nextByte);
+                        ClearZeroRun(pix, runLength);
                     }
                     else
                     {
@@ -104,6 +96,18 @@ namespace BiomSharp.Imaging.Wsq.Huffman
             {
                 throw new WsqCodecException("Huffman table is null or invalid");
             }
+        }
+
+        private void ClearZeroRun(Span<int> pixels, int runLength)
+        {
+            if ((uint)decIdx > (uint)pixels.Length ||
+                (uint)runLength > (uint)(pixels.Length - decIdx))
+            {
+                throw new WsqCodecException("Huffman zero run exceeds the decoded image size");
+            }
+
+            pixels.Slice(decIdx, runLength).Clear();
+            decIdx += runLength;
         }
 
         private static int ReadBits(EndianBinaryReader reader,

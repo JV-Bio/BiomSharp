@@ -2,52 +2,85 @@
 // Licensed under the MIT License
 // See: https://biomsharp.github.io/BiomSharp/LICENSE.txt
 
+using System.Buffers.Binary;
 using System.Text;
 
 namespace BiomSharp.Imaging.Wsq.IO
 {
+
+    /// <summary>
+    /// WSQ is big endian encoded. All reads will use from the stream using big endian.
+    /// </summary>
     internal class EndianBinaryReader : IDisposable
     {
         public Stream BaseStream { get; private set; }
 
         public EndianBinaryReader(Stream stream) => BaseStream = stream;
 
-        // WSQ is big endian encoded.
-        private byte[] ReadBigEndian(int len)
+        private void ReadFully(Span<byte> buffer)
         {
-            byte[] buffer = new byte[len];
-            _ = BaseStream.Read(buffer, 0, len);
-            int i = 0;
-            int j = buffer.Length - 1;
-            while (i < j)
+            while (!buffer.IsEmpty)
             {
-                (buffer[j], buffer[i]) = (buffer[i], buffer[j]);
-                i++;
-                j--;
+                int count = BaseStream.Read(buffer);
+                if (count == 0)
+                {
+                    throw new EndOfStreamException();
+                }
+
+                buffer = buffer[count..];
             }
-            return buffer;
         }
+
 
         public byte ReadByte()
         {
-            byte[] b = new byte[1];
-            _ = BaseStream.Read(b, 0, 1);
-            return b[0];
+            int value = BaseStream.ReadByte();
+            if (value < 0)
+            {
+                throw new EndOfStreamException();
+            }
+            return (byte)value;
         }
 
-        public short ReadInt16() => BitConverter.ToInt16(ReadBigEndian(2), 0);
+        public short ReadInt16()
+        {
+            Span<byte> buffer = stackalloc byte[sizeof(short)];
+            ReadFully(buffer);
+            return BinaryPrimitives.ReadInt16BigEndian(buffer);
+        }
 
-        public ushort ReadUInt16() => BitConverter.ToUInt16(ReadBigEndian(2), 0);
+        public ushort ReadUInt16()
+        {
+            Span<byte> buffer = stackalloc byte[sizeof(ushort)];
+            ReadFully(buffer);
+            return BinaryPrimitives.ReadUInt16BigEndian(buffer);
+        }
 
-        public int ReadInt32() => BitConverter.ToInt32(ReadBigEndian(4), 0);
+        public int ReadInt32()
+        {
+            Span<byte> buffer = stackalloc byte[sizeof(int)];
+            ReadFully(buffer);
+            return BinaryPrimitives.ReadInt32BigEndian(buffer);
+        }
 
-        public uint ReadUInt32() => BitConverter.ToUInt32(ReadBigEndian(4), 0);
+        public uint ReadUInt32()
+        {
+            Span<byte> buffer = stackalloc byte[sizeof(uint)];
+            ReadFully(buffer);
+            return BinaryPrimitives.ReadUInt32BigEndian(buffer);
+        }
 
         public string ReadString(int len)
         {
-            byte[] buffer = new byte[len];
-            _ = BaseStream.Read(buffer, 0, len);
-            return Encoding.ASCII.GetString(buffer, 0, len);
+            // Lenght decides if the buffer will be initialized on the heap or stack.
+            // Heap allocation for short comments.
+            // Stack allocation for long comments.
+            Span<byte> buffer = len <= 256
+                ? stackalloc byte[len]
+                : new byte[len];
+
+            ReadFully(buffer);
+            return Encoding.ASCII.GetString(buffer);
         }
 
         #region IDisposable implementation
