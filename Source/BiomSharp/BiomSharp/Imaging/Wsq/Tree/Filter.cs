@@ -9,25 +9,28 @@ namespace BiomSharp.Imaging.Wsq.Tree
         public static readonly Filter Odd7x9 = new FilterOdd7x9();
         public static readonly Filter Even8x8 = new FilterEven8x8() { Name = "8x8" };
         public string Name { get; protected set; } = "7x9";
-        public IReadOnlyList<float> Hi { get; protected set; } = FilterOdd7x9.DefaultHi;
-        public IReadOnlyList<float> Lo { get; protected set; } = FilterOdd7x9.DefaultLo;
+        public ReadOnlyMemory<float> Hi { get; protected set; } = FilterOdd7x9.DefaultHi;
+        public ReadOnlyMemory<float> Lo { get; protected set; } = FilterOdd7x9.DefaultLo;
 
         protected Filter() { }
 
-        public static Filter Create(string name) => name.ToLower() switch
+        public static Filter Create(string name)
         {
-            "7x9" => Odd7x9,
-            "8x8" => Even8x8,
-            _ => throw new WsqCodecException(
-                    "Invalid filter name: use '7x9' or '8x8'"),
-        };
+            return name.ToLower() switch
+            {
+                "7x9" => Odd7x9,
+                "8x8" => Even8x8,
+                _ => throw new WsqCodecException(
+                        "Invalid filter name: use '7x9' or '8x8'"),
+            };
+        }
 
         public static Filter Create(float[] lo, float[] hi)
         {
             var filter = new Filter()
             {
-                Hi = Array.AsReadOnly((float[])hi.Clone()),
-                Lo = Array.AsReadOnly((float[])lo.Clone()),
+                Hi = (float[])hi.Clone(),
+                Lo = (float[])lo.Clone(),
                 Name = string.Format("{0}x{1}", lo.Length, hi.Length),
             };
             return filter;
@@ -36,7 +39,7 @@ namespace BiomSharp.Imaging.Wsq.Tree
 
     internal class FilterOdd7x9 : Filter
     {
-        public static readonly IReadOnlyList<float> DefaultHi = Array.AsReadOnly(new float[]
+        public static readonly ReadOnlyMemory<float> DefaultHi = new float[7]
         {
             0.06453888262893845F,
             -0.04068941760955844F,
@@ -45,9 +48,9 @@ namespace BiomSharp.Imaging.Wsq.Tree
             -0.41809227322221221F,
             -0.04068941760955844F,
             0.06453888262893845F
-        });
+        };
 
-        public static readonly IReadOnlyList<float> DefaultLo = Array.AsReadOnly(new float[]
+        public static readonly ReadOnlyMemory<float> DefaultLo = new float[9]
         {
             0.03782845550699546F,
             -0.02384946501938000F,
@@ -58,7 +61,7 @@ namespace BiomSharp.Imaging.Wsq.Tree
             -0.11062440441842342F,
             -0.02384946501938000F,
             0.03782845550699546F
-        });
+        };
 
         public FilterOdd7x9()
         {
@@ -69,7 +72,7 @@ namespace BiomSharp.Imaging.Wsq.Tree
 
     internal class FilterEven8x8 : Filter
     {
-        public static readonly IReadOnlyList<float> DefaultHi = Array.AsReadOnly(new float[]
+        public static readonly ReadOnlyMemory<float> DefaultHi = new float[8]
         {
             0.03226944131446922F,
             -0.05261415011924844F,
@@ -79,9 +82,9 @@ namespace BiomSharp.Imaging.Wsq.Tree
             0.18870142780632693F,
             0.05261415011924844F,
             -0.03226944131446922F
-        });
+        };
 
-        public static readonly IReadOnlyList<float> DefaultLo = Array.AsReadOnly(new float[]
+        public static readonly ReadOnlyMemory<float> DefaultLo = new float[8]
         {
             0.07565691101399093F,
             -0.12335584105275092F,
@@ -91,7 +94,7 @@ namespace BiomSharp.Imaging.Wsq.Tree
             -0.09789296778409587F,
             -0.12335584105275092F,
             0.07565691101399093F
-        });
+        };
 
         public FilterEven8x8()
         {

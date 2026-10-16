@@ -74,23 +74,23 @@ namespace BiomSharp.Imaging.Wsq.Segment
         // L1:  (8 bits) number of analysis high pass filter coefficients(length of h1).
         public byte L1 { get; private set; }
         // L0k: 1..k normalized coefficients L0..Lk (= @DttCoefficient.L)
-        public IReadOnlyList<float> DttL0 { get; private set; }
+        public ReadOnlyMemory<float> DttL0 { get; private set; }
         // L1k: 1..k normalized coefficients L0..Lk (= @DttCoefficient.L)
-        public IReadOnlyList<float> DttL1 { get; private set; }
+        public ReadOnlyMemory<float> DttL1 { get; private set; }
 
         private Dtt() : this(Filter.Odd7x9) { }
 
         public Dtt(Filter filter)
         {
             DttL0 = filter.Lo;
-            L0 = (byte)DttL0.Count;
+            L0 = (byte)DttL0.Length;
             DttL1 = filter.Hi;
-            L1 = (byte)DttL1.Count;
+            L1 = (byte)DttL1.Length;
             // 2 * sizeof(byte) + DttCoefficient.SerializeLength * ((L0 + L1) / 2 + 1)
             ContentSize = 56;
         }
 
-        private static IReadOnlyList<float> ReadCoefficients(EndianBinaryReader reader, int lSize, bool l1)
+        private static ReadOnlyMemory<float> ReadCoefficients(EndianBinaryReader reader, int lSize, bool l1)
         {
             float[] ldtt = new float[lSize];
             int aSize = lSize % 2 != 0 ? (lSize + 1) / 2 : lSize / 2;
@@ -126,12 +126,12 @@ namespace BiomSharp.Imaging.Wsq.Segment
                     }
                 }
             }
-            return Array.AsReadOnly(ldtt);
+            return ldtt;
         }
 
-        private static void WriteCoefficients(EndianBinaryWriter writer, IReadOnlyList<float> coeffs)
+        private static void WriteCoefficients(EndianBinaryWriter writer, ReadOnlySpan<float> coeffs)
         {
-            for (int coef = coeffs.Count >> 1; coef < coeffs.Count; coef++)
+            for (int coef = coeffs.Length >> 1; coef < coeffs.Length; coef++)
             {
                 new DttCoefficient(coeffs[coef]).Write(writer);
             }
@@ -151,10 +151,10 @@ namespace BiomSharp.Imaging.Wsq.Segment
         public override void Write(EndianBinaryWriter writer)
         {
             base.Write(writer);
-            writer.Write((byte)DttL0.Count);
-            writer.Write((byte)DttL1.Count);
-            WriteCoefficients(writer, DttL0);
-            WriteCoefficients(writer, DttL1);
+            writer.Write((byte)DttL0.Length);
+            writer.Write((byte)DttL1.Length);
+            WriteCoefficients(writer, DttL0.Span);
+            WriteCoefficients(writer, DttL1.Span);
         }
     }
 }

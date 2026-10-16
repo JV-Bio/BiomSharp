@@ -46,7 +46,7 @@ namespace BiomSharp.Imaging.Wsq
 
         private void SetVariance(Dqt dqt, WsqPixelBuffer<float> image)
         {
-            float[] pixels = image.Pixels;
+            ReadOnlySpan<float> pixels = image.Pixels.AsSpan(0, image.Length);
             int fpIdx;
             int lenx, leny;
             int skipx, skipy;
@@ -144,11 +144,13 @@ namespace BiomSharp.Imaging.Wsq
             }
         }
 
-        private WsqPixelBuffer<short> QuantizeImage(out int[] quantSizes, WsqPixelBuffer<float> fImage, Dqt dqt)
+        private void QuantizeImage(out int[] quantSizes, WsqPixelBuffer<float> fImage, Dqt dqt,
+            WsqPixelBuffer<short> sImage)
         {
             if (QTree != null && WTree != null)
             {
-                float[] a = new float[SubbandCount];
+                Span<float> a = stackalloc float[SubbandCount];
+                a.Clear();
                 for (int i = 0; i < StartSubband3; i++)
                 {
                     a[i] = 1F;
@@ -182,7 +184,7 @@ namespace BiomSharp.Imaging.Wsq
                     }
                 }
 
-                float[] m = new float[SubbandCount];
+                Span<float> m = stackalloc float[SubbandCount];
                 float m1 = 1F / 1024F;
                 float m2 = 1F / 256F;
                 float m3 = 1F / 16F;
@@ -202,9 +204,12 @@ namespace BiomSharp.Imaging.Wsq
                 }
 
                 int k0Len = 0;
-                int[] k0 = new int[SubbandCount];
-                int[] k1 = new int[SubbandCount];
-                float[] sigma = new float[SubbandCount];
+                Span<int> k0 = stackalloc int[SubbandCount];
+                Span<int> k1 = stackalloc int[SubbandCount];
+                Span<float> sigma = stackalloc float[SubbandCount];
+                k0.Clear();
+                k1.Clear();
+                sigma.Clear();
                 for (int cnt = 0; cnt < SubbandCount; cnt++)
                 {
                     if (dqt.Var[cnt] >= VarThreshold)
@@ -219,6 +224,7 @@ namespace BiomSharp.Imaging.Wsq
                 int kIndex = 0;
                 int kLen = k0Len;
                 float q;
+                Span<bool> nonPos = stackalloc bool[SubbandCount];
                 while (true)
                 {
                     float s = 0F;
@@ -234,7 +240,7 @@ namespace BiomSharp.Imaging.Wsq
                     }
                     q = (float)System.Math.Pow(
                         2, (dqt.R / s) - 1F) / 2.5F / (float)System.Math.Pow(p, 1F / s);
-                    bool[] nonPos = new bool[SubbandCount];
+                    nonPos.Clear();
                     int npLen = 0;
                     for (int i = 0; i < kLen; i++)
                     {
@@ -266,10 +272,7 @@ namespace BiomSharp.Imaging.Wsq
 
                 nkIndex = 0;
 
-                for (int i = nkIndex; i < SubbandCount; i++)
-                {
-                    k1[i] = 0;
-                }
+                k1.Clear();
 
                 for (int i = 0; i < k0Len; i++)
                 {
@@ -288,10 +291,9 @@ namespace BiomSharp.Imaging.Wsq
                     dqt.DqtZ[cnt] = 1.2F * dqt.DqtQ[cnt];
                 }
 
-                var sImage = new WsqPixelBuffer<short>(fImage.Width, fImage.Height);
-                short[] spix = sImage.Pixels;
+                Span<short> spix = sImage.Pixels.AsSpan(0, sImage.Length);
                 int sIdx = 0;
-                float[] fpix = fImage.Pixels;
+                ReadOnlySpan<float> fpix = fImage.Pixels.AsSpan(0, fImage.Length);
                 int row, col;
                 float zbin;
                 for (int cnt = 0; cnt < SubbandCount; cnt++)
@@ -358,7 +360,6 @@ namespace BiomSharp.Imaging.Wsq
                 {
                     throw new WsqCodecException("Quantization block sizes invalid");
                 }
-                return sImage;
             }
             else
             {
@@ -414,11 +415,15 @@ namespace BiomSharp.Imaging.Wsq
             }
         }
 
-        public WsqPixelBuffer<short> Quantize(out int[] quantSizes, WsqPixelBuffer<float> fImage, Dqt dqt)
+        public void Quantize(out int[] quantSizes, WsqPixelBuffer<float> fImage, Dqt dqt,
+            WsqPixelBuffer<short> sImage)
         {
+            if (sImage.Width != fImage.Width || sImage.Height != fImage.Height)
+            {
+                throw new ArgumentException("Quantized image dimensions must match the float image.", nameof(sImage));
+            }
             SetVariance(dqt, fImage);
-            WsqPixelBuffer<short> sImage = QuantizeImage(out quantSizes, fImage, dqt);
-            return sImage;
+            QuantizeImage(out quantSizes, fImage, dqt, sImage);
         }
     }
 }

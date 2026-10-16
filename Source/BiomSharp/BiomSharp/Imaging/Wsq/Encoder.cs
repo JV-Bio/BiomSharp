@@ -4,6 +4,7 @@
 
 using BiomSharp.Imaging.Wsq.Segment;
 using BiomSharp.Imaging.Wsq.Tree;
+using System.Buffers;
 
 namespace BiomSharp.Imaging.Wsq
 {
@@ -13,21 +14,37 @@ namespace BiomSharp.Imaging.Wsq
         private WsqPixelBuffer<short>? quantized;
         private int[]? quantizedSizes;
         private IList<Huffman.Encoder.BlockParms>? blockParms;
+        private readonly ArrayPool<float> floatPool;
+        private readonly ArrayPool<short> shortPool;
 
         internal Encoder(Segmenter segmenter)
+            : this(segmenter, ArrayPool<float>.Shared)
         {
+        }
+
+        internal Encoder(Segmenter segmenter, ArrayPool<float> floatPool)
+            : this(segmenter, floatPool, ArrayPool<short>.Shared)
+        {
+        }
+
+        internal Encoder(Segmenter segmenter, ArrayPool<float> floatPool, ArrayPool<short> shortPool)
+        {
+            ArgumentNullException.ThrowIfNull(floatPool);
+            ArgumentNullException.ThrowIfNull(shortPool);
+            this.floatPool = floatPool;
+            this.shortPool = shortPool;
             Segmenter = segmenter;
             Segmenter.SegmentWrite += OnSegmentWrite;
         }
 
-        private static WsqPixelBuffer<float> Create8bppFloat(
+        private static void Fill8bppFloat(
             SimpleBitmap rawImage,
+            WsqPixelBuffer<float> fib,
             out float shift,
             out float scale,
             byte black,
             byte white)
         {
-            var fib = new WsqPixelBuffer<float>(rawImage.Width, rawImage.Height);
             int cnt;
             long sum, ovf;
             float lod, hid;
@@ -37,7 +54,7 @@ namespace BiomSharp.Imaging.Wsq
             int high = black;
             byte[] pixels = rawImage.Pixels;
 
-            for (cnt = 0; cnt < rawImage.Pixels.Length; cnt++)
+            for (cnt = 0; cnt < pixels.Length; cnt++)
             {
                 int raw = pixels[cnt] & 0xFF;
                 if (raw > high)
@@ -68,12 +85,13 @@ namespace BiomSharp.Imaging.Wsq
                 scale = hid;
             }
             scale /= 128f;
-            float[] fip = fib.Pixels;
+            Span<float> fip = fib.Pixels.AsSpan(0, fib.Length);
             for (cnt = 0; cnt < pixels.Length; cnt++)
             {
                 fip[cnt] = ((pixels[cnt] & 0xFF) - shift) / scale;
             }
-            return fib;
+            // Preserve the zero-filled remainder previously supplied by a new array.
+            fip[pixels.Length..].Clear();
         }
 
         public void Encode(
@@ -115,10 +133,12 @@ namespace BiomSharp.Imaging.Wsq
                     {
                         filter = Filter.Create(dttL0, dttL1);
                     }
+
                     if (rawImage.Width > ushort.MaxValue || rawImage.Height > ushort.MaxValue)
                     {
                         throw new WsqCodecException("Image width/height > 65535 pixels");
                     }
+
                     Segmenter.AddWriteSegment(BaseSegment.CreateInstance(Marker.SOI));
                     if (writeNistHeader)
                     {
@@ -130,6 +150,7 @@ namespace BiomSharp.Imaging.Wsq
                             bitrate);
                         Segmenter.AddWriteSegment(wsqHeader.Serialize());
                     }
+
                     if (comments != null && comments.Any())
                     {
                         foreach (string comment in comments)
@@ -137,43 +158,73 @@ namespace BiomSharp.Imaging.Wsq
                             Segmenter.AddWriteSegment(new Com(comment));
                         }
                     }
+
                     Segmenter.AddWriteSegment(new Dtt(filter));
                     var quantizer = Quantizer.Create(rawImage.Width, rawImage.Height);
-                    WsqPixelBuffer<float> fImage =
-                        Create8bppFloat(rawImage, out float shift, out float scale, 0, 255);
-                    _ = Transformer.Decompose(fImage, quantizer, filter);
-                    var dqt = new Dqt(bitrate);
-                    Segmenter.AddWriteSegment(dqt);
-                    quantized = quantizer.Quantize(out int[] quantSizes, fImage, dqt);
-                    quantizedSizes = quantSizes;
-                    var sof = new Sof(
-                        (ushort)rawImage.Height, (ushort)rawImage.Width,
-                        shift, scale, black, white, 2, Implementer.Id);
-                    Segmenter.AddWriteSegment(sof);
-                    _ = Huffman.Encoder.Create();
-                    blockParms = Huffman.Encoder.Encode(quantized, quantSizes);
-                    if (blockParms.Count != 2)
+                    short[]? rentedShorts = null;
+                    try
                     {
-                        throw new WsqCodecException("Huffman block parms count invalid");
-                    }
-                    if (packedDht)
-                    {
-                        var dht = new Dht(0, blockParms[0].Bits, blockParms[0].Values);
-                        Segmenter.AddWriteSegment(dht);
-                        Segmenter.AddWriteSegment(new Sob(0));
-                        dht.AddTable(new DhtTable(1, blockParms[1].Bits, blockParms[1].Values));
+                        float shift, scale;
+                        int[] quantSizes;
+                        float[] rented = floatPool.Rent(checked(rawImage.Width * rawImage.Height));
+                        try
+                        {
+                            var fImage = new WsqPixelBuffer<float>(rawImage.Width, rawImage.Height, rented);
+                            Fill8bppFloat(rawImage, fImage, out shift, out scale, 0, 255);
+                            _ = Transformer.Decompose(fImage, quantizer, filter);
+                            var dqt = new Dqt(bitrate);
+                            Segmenter.AddWriteSegment(dqt);
+                            rentedShorts = shortPool.Rent(fImage.Length);
+                            quantized = new WsqPixelBuffer<short>(fImage.Width, fImage.Height, rentedShorts);
+                            quantizer.Quantize(out quantSizes, fImage, dqt, quantized);
+                        }
+                        finally
+                        {
+                            // Huffman encoding only needs the quantized short image.
+                            floatPool.Return(rented, clearArray: true);
+                        }
+
+                        quantizedSizes = quantSizes;
+                        var sof = new Sof(
+                            (ushort)rawImage.Height, (ushort)rawImage.Width,
+                            shift, scale, black, white, 2, Implementer.Id);
+                        Segmenter.AddWriteSegment(sof);
+                        blockParms = Huffman.Encoder.Encode(quantized, quantSizes);
+                        if (blockParms.Count != 2)
+                        {
+                            throw new WsqCodecException("Huffman block parms count invalid");
+                        }
+
+                        if (packedDht)
+                        {
+                            var dht = new Dht(0, blockParms[0].Bits.Span, blockParms[0].Values.Span);
+                            Segmenter.AddWriteSegment(dht);
+                            Segmenter.AddWriteSegment(new Sob(0));
+                            dht.AddTable(new DhtTable(1, blockParms[1].Bits.Span, blockParms[1].Values.Span));
+                            Segmenter.AddWriteSegment(new Sob(1));
+                        }
+                        else
+                        {
+                            Segmenter.AddWriteSegment(new Dht(0, blockParms[0].Bits.Span, blockParms[0].Values.Span));
+                            Segmenter.AddWriteSegment(new Sob(0));
+                            Segmenter.AddWriteSegment(new Dht(1, blockParms[1].Bits.Span, blockParms[1].Values.Span));
+                            Segmenter.AddWriteSegment(new Sob(1));
+                        }
+
                         Segmenter.AddWriteSegment(new Sob(1));
+                        Segmenter.AddWriteSegment(BaseSegment.CreateInstance(Marker.EOI));
+                        Segmenter.WriteAll();
                     }
-                    else
+                    finally
                     {
-                        Segmenter.AddWriteSegment(new Dht(0, blockParms[0].Bits, blockParms[0].Values));
-                        Segmenter.AddWriteSegment(new Sob(0));
-                        Segmenter.AddWriteSegment(new Dht(1, blockParms[1].Bits, blockParms[1].Values));
-                        Segmenter.AddWriteSegment(new Sob(1));
+                        quantized = null;
+                        quantizedSizes = null;
+                        blockParms = null;
+                        if (rentedShorts != null)
+                        {
+                            shortPool.Return(rentedShorts, clearArray: true);
+                        }
                     }
-                    Segmenter.AddWriteSegment(new Sob(1));
-                    Segmenter.AddWriteSegment(BaseSegment.CreateInstance(Marker.EOI));
-                    Segmenter.WriteAll();
                 }
                 else
                 {

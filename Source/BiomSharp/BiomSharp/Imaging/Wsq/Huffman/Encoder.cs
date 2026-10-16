@@ -18,22 +18,22 @@ namespace BiomSharp.Imaging.Wsq.Huffman
         public struct BlockParms
         {
             public CodeEntries Codes { get; set; }
-            public int[] Bits { get; set; }
-            public int[] Values { get; set; }
+            public ReadOnlyMemory<int> Bits { get; set; }
+            public ReadOnlyMemory<int> Values { get; set; }
         };
 
         private Encoder() { }
 
         public static Encoder Create() => new();
 
-        private static int[] CountCodeFrequencies(WsqPixelBuffer<short> sImage, int offset, int length)
+        private static void CountCodeFrequencies(WsqPixelBuffer<short> sImage, int offset, int length, Span<int> cnts)
         {
             int rcnt = 0;
-            int[] cnts = new int[MaxHuffCounts + 1];
+            cnts.Clear();
             cnts[MaxHuffCounts] = 1;
             int LoMaxCoeff = 1 - MaxHuffCoeff;
             int state = CoeffCode;
-            short[] pixels = sImage.Pixels;
+            ReadOnlySpan<short> pixels = sImage.Pixels.AsSpan(0, sImage.Length);
 
             for (int cnt = offset; cnt < length + offset; cnt++)
             {
@@ -158,10 +158,9 @@ namespace BiomSharp.Imaging.Wsq.Huffman
                         "Huffman encoder Z-Run too long in count block");
                 }
             }
-            return cnts;
         }
 
-        private static void GetLeastFrequency(out int first, out int next, int[] freq)
+        private static void GetLeastFrequency(out int first, out int next, ReadOnlySpan<int> freq)
         {
             int code_temp;
             int value_temp;
@@ -215,14 +214,11 @@ namespace BiomSharp.Imaging.Wsq.Huffman
             next = value2_tmp;
         }
 
-        private static int[] GetCodeSizes(int[] codeFreqs)
+        private static void GetCodeSizes(Span<int> codeFreqs, Span<int> codeSizes)
         {
-            int[] codeSizes = new int[MaxHuffCounts + 1];
-            int[] others = new int[MaxHuffCounts + 1];
-            for (int i = 0; i <= MaxHuffCounts; i++)
-            {
-                others[i] = -1;
-            }
+            codeSizes.Clear();
+            Span<int> others = stackalloc int[MaxHuffCounts + 1];
+            others.Fill(-1);
             while (true)
             {
                 GetLeastFrequency(out int first, out int next, codeFreqs);
@@ -246,10 +242,9 @@ namespace BiomSharp.Imaging.Wsq.Huffman
                     codeSizes[next]++;
                 }
             }
-            return codeSizes;
         }
 
-        private static int[] GetHuffBits(out bool adjust, int[] codeSizes)
+        private static int[] GetHuffBits(out bool adjust, ReadOnlySpan<int> codeSizes)
         {
             adjust = false;
             int[] adSizes = new int[2 * MaxHuffBits];
@@ -276,7 +271,7 @@ namespace BiomSharp.Imaging.Wsq.Huffman
             l1 = l3 - 1;
             l2 = MaxHuffBits - 1;
 
-            int[] tbits = new int[l3];
+            Span<int> tbits = stackalloc int[2 * MaxHuffBits];
 
             for (i = 0; i < MaxHuffBits << 1; i++)
             {
@@ -322,7 +317,7 @@ namespace BiomSharp.Imaging.Wsq.Huffman
             }
         }
 
-        private static int[] SortCodeSizes(int[] codeSizes)
+        private static int[] SortCodeSizes(ReadOnlySpan<int> codeSizes)
         {
             int[] sorted = new int[MaxHuffCounts + 1];
             int i2 = 0;
@@ -357,18 +352,21 @@ namespace BiomSharp.Imaging.Wsq.Huffman
             out int[] huffBits,
             out int[] huffVals,
             WsqPixelBuffer<short> sImage, int offset,
-            int[] blockSizes)
+            ReadOnlySpan<int> blockSizes)
         {
-            int[] codeFreqs = CountCodeFrequencies(sImage, offset, blockSizes[0]);
+            Span<int> codeFreqs = stackalloc int[MaxHuffCounts + 1];
+            Span<int> codeFreqs2 = stackalloc int[MaxHuffCounts + 1];
+            CountCodeFrequencies(sImage, offset, blockSizes[0], codeFreqs);
             for (int i = 1; i < blockSizes.Length; i++)
             {
-                int[] codeFreqs2 = CountCodeFrequencies(sImage, offset + blockSizes[i - 1], blockSizes[i]);
+                CountCodeFrequencies(sImage, offset + blockSizes[i - 1], blockSizes[i], codeFreqs2);
                 for (int j = 0; j < MaxHuffCounts; j++)
                 {
                     codeFreqs[j] += codeFreqs2[j];
                 }
             }
-            int[] codeSizes = GetCodeSizes(codeFreqs);
+            Span<int> codeSizes = stackalloc int[MaxHuffCounts + 1];
+            GetCodeSizes(codeFreqs, codeSizes);
             huffBits = GetHuffBits(out bool adjust, codeSizes);
             if (adjust)
             {
@@ -388,7 +386,7 @@ namespace BiomSharp.Imaging.Wsq.Huffman
             int pix;
             int rcnt = 0, state;
             int cnt;
-            short[] sip = sImage.Pixels;
+            ReadOnlySpan<short> sip = sImage.Pixels.AsSpan(0, sImage.Length);
             CodeEntry[] codes = codeEntries.Codes;
             loMaxCoeff = 1 - MaxHuffCoeff;
 
@@ -614,9 +612,9 @@ namespace BiomSharp.Imaging.Wsq.Huffman
 
         public static IList<BlockParms> Encode(WsqPixelBuffer<short> sImage, int[] quantSizes)
         {
-            var blockParms = new List<BlockParms>();
+            var blockParms = new List<BlockParms>(2);
             CodeEntries codes = CreateCodes(out int[] huffBits, out int[] huffVals, sImage, 0,
-                new int[] { quantSizes[0] });
+                quantSizes.AsSpan(0, 1));
             blockParms.Add(new BlockParms
             {
                 Bits = huffBits,
@@ -624,7 +622,7 @@ namespace BiomSharp.Imaging.Wsq.Huffman
                 Values = huffVals,
             });
             codes = CreateCodes(out huffBits, out huffVals, sImage, quantSizes[0],
-                new int[] { quantSizes[1], quantSizes[2] });
+                quantSizes.AsSpan(1, 2));
             blockParms.Add(new BlockParms
             {
                 Bits = huffBits,

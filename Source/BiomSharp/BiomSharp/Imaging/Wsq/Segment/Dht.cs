@@ -35,7 +35,7 @@ namespace BiomSharp.Imaging.Wsq.Segment
         public DhtTable(int id)
             : this() => Th = (byte)id;
 
-        public DhtTable(int id, int[] hBits, int[] hVals)
+        public DhtTable(int id, ReadOnlySpan<int> hBits, ReadOnlySpan<int> hVals)
             : this()
         {
             Th = (byte)id;
@@ -115,9 +115,10 @@ namespace BiomSharp.Imaging.Wsq.Segment
 
         private Dht() { }
 
-        public Dht(int dhtId, int[] hBits, int[] hVals) : this() => AddTable(new DhtTable(dhtId, hBits, hVals));
+        public Dht(int dhtId, ReadOnlySpan<int> hBits, ReadOnlySpan<int> hVals) : this() => AddTable(new DhtTable(dhtId, hBits, hVals));
 
         private int GetCodeCount() => tables.Sum(t => t.CodeCount);
+
         public void AddTable(DhtTable table)
         {
             if (tables.Any(t => t.Th == table.Th))
